@@ -12,6 +12,11 @@ TOKEN = os.getenv("TOKEN")
 
 matches = {}
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Welcome to Hand Cricket PvP!\nUse /start_pvp to start a new match."
+    )
+
 async def start_pvp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     match_id = str(update.effective_chat.id)
@@ -88,8 +93,7 @@ async def toss_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{match['toss_winner'].first_name}, choose to Bat or Bowl:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
-
-async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     choice = query.data  # 'bat' or 'bowl'
@@ -116,8 +120,12 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     match["balls_played"] = 0
     match["innings"] = 1
     match["target"] = None
+    match["awaiting"] = "batsman"  # to track whose turn it is
 
-    keyboard = [[InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 7)]]
+    keyboard = [
+        [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 4)],
+        [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(4, 7)],
+    ]
 
     await query.edit_message_text(
         f"Game started!\n\n"
@@ -126,6 +134,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{match['batsman'].first_name}, play your shot (1-6):",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
 
 async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -138,71 +147,94 @@ async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if match["state"] != "playing":
         return await query.answer("Game not in playing state.", show_alert=True)
 
-    if user != match["batsman"]:
-        return await query.answer("Wait for your turn!", show_alert=True)
+    # Check whose turn it is
+    if match["awaiting"] == "batsman" and user != match["batsman"]:
+        return await query.answer("Wait for your turn, batsman!", show_alert=True)
+    if match["awaiting"] == "bowler" and user != match["bowler"]:
+        return await query.answer("Wait for your turn, bowler!", show_alert=True)
 
-    bowler_num = random.randint(1, 6)
-    batsman_num = num
-
-    if batsman_num == bowler_num:
-        # Wicket
-        text = (
-            f"{match['batsman'].first_name} got OUT!\n"
-            f"Ball: {match['balls_played'] + 1}\n"
-            f"Runs: {match['batsman_score']}\n"
+    if match["awaiting"] == "batsman":
+        match["last_batsman_num"] = num
+        match["awaiting"] = "bowler"
+        await query.edit_message_text(
+            f"{match['batsman'].first_name} chose {num}. Now {match['bowler'].first_name} can choose.",
         )
-        if match["innings"] == 1:
-            match["target"] = match["batsman_score"] + 1
-            match["innings"] = 2
-            # Swap roles
-            match["batsman"], match["bowler"] = match["bowler"], match["batsman"]
-            match["batsman_score"] = 0
-            match["balls_played"] = 0
-            match["state"] = "playing"
-            keyboard = [[InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 7)]]
-            text += (
-                f"\nInnings 2 started.\n"
-                f"{match['batsman'].first_name} needs {match['target']} runs to win.\n"
-                f"{match['batsman'].first_name}, play your shot (1-6):"
-            )
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-            return
-        else:
-            # Match over
-            batsman_total = match["batsman_score"]
-            if batsman_total >= match["target"]:
-                winner = match["batsman"]
-            else:
-                winner = match["bowler"]
-            text += f"\nMatch over! Winner: {winner.first_name}"
-            await query.edit_message_text(text)
-            del matches[match_id]
-            return
-    else:
-        match["batsman_score"] += batsman_num
-        match["balls_played"] += 1
+        return
 
-        if match["innings"] == 2 and match["batsman_score"] >= match["target"]:
-            # Batsman won
+    if match["awaiting"] == "bowler":
+        bowler_num = num
+        batsman_num = match["last_batsman_num"]
+
+        if batsman_num == bowler_num:
+            # Wicket
             text = (
-                f"{match['batsman'].first_name} scored {match['batsman_score']} runs and won the match!\n"
+                f"{match['batsman'].first_name} got OUT!\n"
+                f"Ball: {match['balls_played'] + 1}\n"
+                f"Runs: {match['batsman_score']}\n"
             )
-            await query.edit_message_text(text)
-            del matches[match_id]
-            return
+            if match["innings"] == 1:
+                match["target"] = match["batsman_score"] + 1
+                match["innings"] = 2
+                # Swap roles
+                match["batsman"], match["bowler"] = match["bowler"], match["batsman"]
+                match["batsman_score"] = 0
+                match["balls_played"] = 0
+                match["state"] = "playing"
+                match["awaiting"] = "batsman"
+                keyboard = [
+                    [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 4)],
+                    [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(4, 7)],
+                ]
+                text += (
+                    f"\nInnings 2 started.\n"
+                    f"{match['batsman'].first_name} needs {match['target']} runs to win.\n"
+                    f"{match['batsman'].first_name}, play your shot (1-6):"
+                )
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+                return
+            else:
+                # Match over
+                batsman_total = match["batsman_score"]
+                bowler_total = match["bowler_score"]
+                if batsman_total >= match["target"]:
+                    winner = match["batsman"]
+                else:
+                    winner = match["bowler"]
+                text += f"\nMatch over! Winner: {winner.first_name}"
+                await query.edit_message_text(text)
+                del matches[match_id]
+                return
+        else:
+            match["batsman_score"] += batsman_num
+            match["balls_played"] += 1
 
-        keyboard = [[InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 7)]]
-        text = (
-            f"{match['batsman'].first_name} played {batsman_num}, bowler bowled {bowler_num}.\n"
-            f"Score: {match['batsman_score']}\n"
-            f"Ball: {match['balls_played']}"
-        )
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            if match["innings"] == 2 and match["batsman_score"] >= match["target"]:
+                # Batsman won
+                text = (
+                    f"{match['batsman'].first_name} scored {match['batsman_score']} runs and won the match!\n"
+                )
+                await query.edit_message_text(text)
+                del matches[match_id]
+                return
+
+            keyboard = [
+                [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 4)],
+                [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(4, 7)],
+            ]
+            text = (
+                f"{match['batsman'].first_name} played {batsman_num}, bowler bowled {bowler_num}.\n"
+                f"Score: {match['batsman_score']}\n"
+                f"Ball: {match['balls_played']}\n\n"
+                f"{match['batsman'].first_name}, choose your next shot (1-6):"
+            )
+            match["awaiting"] = "batsman"
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("start_pvp", start_pvp))
     app.add_handler(CallbackQueryHandler(join_match, pattern="^join_match$"))
     app.add_handler(CallbackQueryHandler(toss_choice, pattern="^toss_(heads|tails)$"))
