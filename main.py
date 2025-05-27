@@ -93,9 +93,10 @@ async def toss_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{match['toss_winner'].first_name}, choose to Bat or Bowl:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
-    async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    # ... rest of the function ...
     choice = query.data  # 'bat' or 'bowl'
     match_id = str(query.message.chat.id)
     match = matches[match_id]
