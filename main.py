@@ -238,7 +238,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"Game started!\n\n"
         f"🏏 *Batsman*: {match['batsman'].first_name}\n"
-        f"🎳 *Bowler*: {match['bowler'].first_name}\n\n"
+        f"⚾ *Bowler*: {match['bowler'].first_name}\n\n"
         # continuing from part 1...
 
         # prompt batsman to play
