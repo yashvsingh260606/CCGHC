@@ -485,3 +485,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = Application.builder
+from telegram.ext import ApplicationBuilder
+
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("register", register))
+    app.add_handler(CommandHandler("daily", daily))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("add", add_coins))
+    app.add_handler(CommandHandler("pm", pm))
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    print("Bot started...")
+    await app.run_polling()
+
+import asyncio
+asyncio.run(main())
