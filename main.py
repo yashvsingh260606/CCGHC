@@ -141,7 +141,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{match['batsman'].first_name}, play your shot (1-6):",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
-    async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     num = int(query.data.split("_")[1])
