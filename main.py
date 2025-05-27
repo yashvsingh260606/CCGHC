@@ -335,7 +335,7 @@ def number_handler(update: Update, context: CallbackContext):
                 get_user(winner_uid)["coins"] += match["bet"] * 2
 
             # Update wins count
-            get_user(winner_uid]["wins"] += 1
+            get_user(winner_uid)["wins"] += 1
 
             save_data()
 
