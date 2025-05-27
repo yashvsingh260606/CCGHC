@@ -12,7 +12,7 @@ TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 
 matches = {}
 users = {}
-admins = {7361215114}  # Put your Telegram user ID(s) here as admin(s)
+admins = {7361215114,6827067154}  # Put your Telegram user ID(s) here as admin(s)
 
 # Helper function to get current UTC date string
 def current_date():
