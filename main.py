@@ -1,301 +1,280 @@
+# ======== PART 1 ========
+
 import json
 import time
 import logging
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater,
-    CommandHandler,
-    CallbackQueryHandler,
-    CallbackContext,
+    Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 )
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
+admins = ["123456789"]  # Replace with real admin IDs
 
-BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace this with your bot token
+USERS_FILE = "users_data.json"
+MATCHES_FILE = "matches_data.json"
 
-USERS_FILE = "users.json"
-MATCHES_FILE = "matches.json"
+users = {}
+matches = {}
 
-ADMINS = []  # Your Telegram user IDs as strings if needed for admin commands
-
-# Load and save data functions with error handling
-def load_json(filename):
+def load_data():
+    global users, matches
     try:
-        with open(filename, "r") as f:
-            return json.load(f)
+        with open(USERS_FILE, "r") as f:
+            users = json.load(f)
     except:
-        return {}
+        users = {}
+    try:
+        with open(MATCHES_FILE, "r") as f:
+            matches = json.load(f)
+    except:
+        matches = {}
 
-def save_json(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=2)
-
-users = load_json(USERS_FILE)
-matches = load_json(MATCHES_FILE)
-
-def save_all():
-    save_json(USERS_FILE, users)
-    save_json(MATCHES_FILE, matches)
+def save_data():
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
+    with open(MATCHES_FILE, "w") as f:
+        json.dump(matches, f, indent=2)
 
 def get_user(uid):
     if uid not in users:
         users[uid] = {"coins": 1000, "wins": 0, "last_daily": 0}
-        save_all()
+        save_data()
     return users[uid]
+
+def is_admin(uid):
+    return str(uid) in admins
+
+def number_buttons():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("1", callback_data='num_1'), InlineKeyboardButton("2", callback_data='num_2'), InlineKeyboardButton("3", callback_data='num_3')],
+        [InlineKeyboardButton("4", callback_data='num_4'), InlineKeyboardButton("5", callback_data='num_5'), InlineKeyboardButton("6", callback_data='num_6')],
+    ])
 
 def current_time():
     return int(time.time())
-
-def format_match_id():
-    return str(int(time.time() * 1000))[-6:]
-
-def number_buttons():
-    keyboard = [
-        [InlineKeyboardButton(str(n), callback_data=f"num_{n}") for n in [1, 2, 3]],
-        [InlineKeyboardButton(str(n), callback_data=f"num_{n}") for n in [4, 5, 6]],
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def is_admin(uid):
-    return str(uid) in ADMINS
-
-# === Command Handlers ===
 
 def start(update: Update, context: CallbackContext):
     uid = str(update.effective_user.id)
     get_user(uid)
     update.message.reply_text(
-        f"Hi {update.effective_user.first_name}! Welcome to Hand Cricket.\n"
-        "Commands:\n"
-        "/pm <bet> - create/join match\n"
-        "/profile - show your profile\n"
-        "/daily - claim daily coins\n"
-        "/help - show commands"
+        "Welcome to Hand Cricket Bot!\n\n"
+        "/pm <bet> - Start PvP match\n"
+        "/profile - Your stats\n"
+        "/daily - Claim coins\n"
+        "/leaderboard - Top users\n"
+        "/help - All commands"
     )
 
 def help_command(update: Update, context: CallbackContext):
     update.message.reply_text(
-        "Commands:\n"
-        "/pm <bet> - Create or join a PvP match with optional bet\n"
-        "/profile - Show your profile\n"
-        "/daily - Claim daily coins\n"
-        "/help - Show this message"
+        "/pm <bet> - Start PvP match\n"
+        "/profile - Your stats\n"
+        "/daily - Claim coins\n"
+        "/leaderboard - Top users\n"
+        "/help - All commands"
     )
 
 def profile(update: Update, context: CallbackContext):
     uid = str(update.effective_user.id)
-    user = get_user(uid)
-    update.message.reply_text(f"Profile:\nCoins: {user['coins']}\nWins: {user['wins']}")
+    u = get_user(uid)
+    update.message.reply_text(f"Coins: {u['coins']}\nWins: {u['wins']}")
 
 def daily(update: Update, context: CallbackContext):
     uid = str(update.effective_user.id)
     user = get_user(uid)
     now = current_time()
-    if now - user.get("last_daily", 0) < 24 * 3600:
-        update.message.reply_text("Daily already claimed. Try again tomorrow!")
+    if now - user['last_daily'] < 86400:
+        update.message.reply_text("Already claimed today!")
         return
-    reward = 500
-    user["coins"] += reward
-    user["last_daily"] = now
-    save_all()
-    update.message.reply_text(f"Daily claimed! You got {reward} coins.")
+    user['coins'] += 500
+    user['last_daily'] = now
+    save_data()
+    update.message.reply_text("You claimed 500 daily coins!")
 
-# === Match commands and callbacks ===
+def leaderboard(update: Update, context: CallbackContext):
+    top = sorted(users.items(), key=lambda x: x[1]["coins"], reverse=True)[:10]
+    text = "🏆 Leaderboard (Top 10 by Coins):\n\n"
+    for i, (uid, udata) in enumerate(top, 1):
+        try:
+            name = context.bot.get_chat_member(update.effective_chat.id, int(uid)).user.first_name
+        except:
+            name = "User"
+        text += f"{i}. {name} - {udata['coins']} coins\n"
+    update.message.reply_text(text)
 
-def pm_command(update: Update, context: CallbackContext):
+def add_coins(update: Update, context: CallbackContext):
     uid = str(update.effective_user.id)
-    get_user(uid)
-    bet = 0
-    if context.args and context.args[0].isdigit():
-        bet = int(context.args[0])
-    if bet > 0 and users[uid]["coins"] < bet:
-        update.message.reply_text("You don't have enough coins to bet that amount.")
+    if not is_admin(uid):
+        update.message.reply_text("Admins only!")
         return
-    match_id = format_match_id()
+    try:
+        target = context.args[0]
+        amount = int(context.args[1])
+        get_user(target)["coins"] += amount
+        save_data()
+        update.message.reply_text("Coins added.")
+    except:
+        update.message.reply_text("Usage: /add <user_id> <coins>")
+# ======== PART 2 ========
+
+def pm(update: Update, context: CallbackContext):
+    uid = str(update.effective_user.id)
+    if not context.args or not context.args[0].isdigit():
+        update.message.reply_text("Usage: /pm <bet>")
+        return
+    bet = int(context.args[0])
+    user = get_user(uid)
+    if user["coins"] < bet:
+        update.message.reply_text("You don't have enough coins!")
+        return
+    match_id = str(update.message.message_id)
     matches[match_id] = {
-        "players": [uid],
         "bet": bet,
-        "state": "waiting",
-        "created_at": current_time(),
-        "last_activity": current_time(),
-        "turn": None,
-        "innings": 1,
-        "scores": {uid: 0},
-        "wickets": 0,
-        "batting": uid,
-        "bowling": None,
-        "batsman_num": None,
-        "bowler_num": None,
+        "player1": uid,
+        "player2": None,
+        "status": "waiting",
         "msg_id": None,
-        "chat_id": update.effective_chat.id,
-        "max_wickets": 1,
-        "over": 0.0,
+        "chat_id": update.message.chat_id,
     }
-    save_all()
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Join Match", callback_data=f"join_{match_id}")]
-    ])
-    update.message.reply_text(
-        f"{update.effective_user.first_name} created a match with bet {bet} coins.\nPress Join to join!",
-        reply_markup=keyboard,
-    )
+    save_data()
+    join_btn = InlineKeyboardMarkup([[InlineKeyboardButton("Join", callback_data=f"join_{match_id}")]])
+    msg = update.message.reply_text(f"{update.effective_user.first_name} started a match for {bet} coins.\nClick to join!", reply_markup=join_btn)
+    matches[match_id]["msg_id"] = msg.message_id
+    save_data()
 
-def join_match(update: Update, context: CallbackContext):
+def join_match_callback(update: Update, context: CallbackContext):
     query = update.callback_query
-    uid = str(query.from_user.id)
-    _, match_id = query.data.split("_")
-    if match_id not in matches:
-        query.answer("Match no longer available.")
-        return
-    match = matches[match_id]
-    if uid in match["players"]:
-        query.answer("You are already in this match.")
-        return
-    if len(match["players"]) >= 2:
-        query.answer("Match is full.")
-        return
-    if match["bet"] > 0 and users[uid]["coins"] < match["bet"]:
-        query.answer("Not enough coins for this bet.")
-        return
-    match["players"].append(uid)
-    match["scores"][uid] = 0
-    match["state"] = "playing"
-    match["bowling"] = uid
-    match["turn"] = match["batting"]
-    match["last_activity"] = current_time()
-    if match["bet"] > 0:
-        for p in match["players"]:
-            users[p]["coins"] -= match["bet"]
-    save_all()
-
-    # Use user first names safely
-    chat_id = match["chat_id"]
-    try:
-        batting_name = context.bot.get_chat_member(chat_id, int(match["batting"])).user.first_name
-    except:
-        batting_name = "Batsman"
-    try:
-        bowling_name = context.bot.get_chat_member(chat_id, int(match["bowling"])).user.first_name
-    except:
-        bowling_name = "Bowler"
-
-    text = (
-        f"Match started!\n"
-        f"🏏 Batter: {batting_name}\n"
-        f"⚾ Bowler: {bowling_name}\n\n"
-        f"Over: 0.0\n"
-        f"{batting_name} to bat first.\n\n"
-        "Batter, choose your number:"
-    )
-    sent = context.bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=query.message.message_id,
-        text=text,
-        reply_markup=number_buttons(),
-    )
-    match["msg_id"] = sent.message_id
-    save_all()
     query.answer()
-
-def number_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
+    data = query.data
     uid = str(query.from_user.id)
-    if not query.data.startswith("num_"):
-        query.answer()
+    if not data.startswith("join_"):
         return
-    chosen_num = int(query.data.split("_")[1])
+    match_id = data.split("_")[1]
+    match = matches.get(match_id)
+    if not match or match["player2"] is not None:
+        query.edit_message_text("Match no longer available.")
+        return
+    if uid == match["player1"]:
+        query.answer("You can't join your own match.")
+        return
+    p1 = get_user(match["player1"])
+    p2 = get_user(uid)
+    if p2["coins"] < match["bet"]:
+        query.answer("You don't have enough coins!")
+        return
+    match["player2"] = uid
+    match["status"] = "toss"
+    match["turn"] = match["player1"]
+    match["batting"] = None
+    match["innings"] = 1
+    match["scores"] = {match["player1"]: 0, match["player2"]: 0}
+    match["balls"] = 0
+    match["target"] = None
+    match["selected"] = {}
+    save_data()
+    context.bot.edit_message_text(
+        f"Match joined!\n{query.from_user.first_name} vs {context.bot.get_chat(match['chat_id']).get_member(int(match['player1'])).user.first_name}\n\nToss time! {context.bot.get_chat(match['chat_id']).get_member(int(match['player1'])).user.first_name}, choose:",
+        chat_id=match["chat_id"],
+        message_id=match["msg_id"],
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Heads", callback_data=f"toss_H"), InlineKeyboardButton("Tails", callback_data=f"toss_T")]
+        ])
+    )
 
-    # Find match for user
-    user_match = None
-    for m in matches.values():
-        if uid in m["players"] and m["state"] == "playing":
-            user_match = m
+def toss_choice(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    uid = str(query.from_user.id)
+    data = query.data
+    match_id = None
+    for mid, m in matches.items():
+        if m.get("status") == "toss" and m["player1"] == uid:
+            match_id = mid
             break
-    if not user_match:
-        query.answer("You're not in an active match.")
+    if not match_id:
         return
-    if user_match["turn"] != uid:
-        query.answer("Not your turn yet.")
+    choice = data.split("_")[1]
+    result = "H" if time.time() % 2 < 1 else "T"
+    match = matches[match_id]
+    winner = match["player1"] if choice == result else match["player2"]
+    match["batting"] = winner
+    match["bowling"] = match["player1"] if winner == match["player2"] else match["player2"]
+    match["status"] = "play"
+    match["balls"] = 0
+    match["selected"] = {}
+    save_data()
+    context.bot.edit_message_text(
+        f"Toss result: {result}\n{context.bot.get_chat(match['chat_id']).get_member(int(winner)).user.first_name} won and will bat first.\n\nBatsman, choose a number:",
+        chat_id=match["chat_id"],
+        message_id=match["msg_id"],
+        reply_markup=number_buttons()
+    )
+
+def handle_number(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    uid = str(query.from_user.id)
+    num = int(query.data.split("_")[1])
+    for match_id, m in matches.items():
+        if m.get("status") == "play" and uid in [m["batting"], m["bowling"]]:
+            match = m
+            break
+    else:
         return
-
-    chat_id = user_match["chat_id"]
-    msg_id = user_match["msg_id"]
-
-    # Get names safely
-    try:
-        batting_name = context.bot.get_chat_member(chat_id, int(user_match["batting"])).user.first_name
-    except:
-        batting_name = "Batsman"
-    try:
-        bowling_name = context.bot.get_chat_member(chat_id, int(user_match["bowling"])).user.first_name
-    except:
-        bowling_name = "Bowler"
-
-    if uid == user_match["batting"]:
-        user_match["batsman_num"] = chosen_num
-        user_match["turn"] = user_match["bowling"]
-        text = (
-            f"Over: {user_match['over']:.1f}\n"
-            f"{batting_name} chose a number.\n"
-            f"Now it's {bowling_name}'s turn to bowl."
+    if uid in match["selected"]:
+        return
+    match["selected"][uid] = num
+    if len(match["selected"]) == 1:
+        waiting = match["bowling"] if uid == match["batting"] else match["batting"]
+        context.bot.edit_message_reply_markup(
+            chat_id=match["chat_id"],
+            message_id=match["msg_id"],
+            reply_markup=None
         )
-        context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, reply_markup=number_buttons())
-        save_all()
-        query.answer("Batsman number chosen.")
-        return
-
-    elif uid == user_match["bowling"]:
-        user_match["bowler_num"] = chosen_num
-
-        if user_match["batsman_num"] == user_match["bowler_num"]:
-            # Wicket!
-            user_match["wickets"] += 1
-            text = (
-                f"Over: {user_match['over']:.1f}\n"
-                f"{batting_name} chose {user_match['batsman_num']}, {bowling_name} chose {user_match['bowler_num']}.\n"
-                "Wicket! ⚠️\n\n"
-                f"Score: {user_match['scores'][user_match['batting']]}\n"
-                "Innings over."
-            )
-            user_match["state"] = "finished"
-            winner = user_match["bowling"]
-            loser = user_match["batting"]
-            if user_match["bet"] > 0:
-                users[winner]["coins"] += user_match["bet"] * 2
-            users[winner]["wins"] += 1
-            save_all()
-            context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, reply_markup=None)
-            query.answer()
-            return
+        context.bot.send_message(match["chat_id"], f"{query.from_user.first_name} chose a number.\nWaiting for opponent...")
+    else:
+        bat = match["batting"]
+        bowl = match["bowling"]
+        bnum = match["selected"][bat]
+        blnum = match["selected"][bowl]
+        if bnum == blnum:
+            text = f"{context.bot.get_chat(match['chat_id']).get_member(int(bat)).user.first_name} chose {bnum}, {context.bot.get_chat(match['chat_id']).get_member(int(bowl)).user.first_name} chose {blnum}\n\n**OUT!**"
+            if match["innings"] == 1:
+                match["innings"] = 2
+                match["target"] = match["scores"][bat] + 1
+                match["batting"], match["bowling"] = bowl, bat
+                match["selected"] = {}
+                match["balls"] = 0
+                text += f"\n\nInnings over. Target: {match['target']}\nNow it's {context.bot.get_chat(match['chat_id']).get_member(int(bowl)).user.first_name}'s turn to bat."
+            else:
+                p1, p2 = match["player1"], match["player2"]
+                s1, s2 = match["scores"][p1], match["scores"][p2]
+                if s1 == s2:
+                    text += "\n\nMatch tied!"
+                else:
+                    winner = p1 if s1 > s2 else p2
+                    get_user(winner)["coins"] += match["bet"]
+                    get_user(winner)["wins"] += 1
+                    loser = p2 if winner == p1 else p1
+                    get_user(loser)["coins"] -= match["bet"]
+                    text += f"\n\n{context.bot.get_chat(match['chat_id']).get_member(int(winner)).user.first_name} wins the match!"
+                del matches[match_id]
+                save_data()
+                context.bot.send_message(match["chat_id"], text)
+                return
         else:
-            runs = user_match["batsman_num"]
-            user_match["scores"][user_match["batting"]] += runs
-            user_match["over"] += 0.1
-            if round(user_match["over"] % 1, 1) >= 0.6:
-                user_match["over"] = int(user_match["over"]) + 1.0
+            match["scores"][bat] += bnum
+            match["balls"] += 1
+            text = f"{context.bot.get_chat(match['chat_id']).get_member(int(bat)).user.first_name} chose {bnum}, {context.bot.get_chat(match['chat_id']).get_member(int(bowl)).user.first_name} chose {blnum}\n\n{context.bot.get_chat(match['chat_id']).get_member(int(bat)).user.first_name} continues. Score: {match['scores'][bat]}"
+        match["selected"] = {}
+        save_data()
+        context.bot.send_message(match["chat_id"], text)
+        if match_id in matches:
+            context.bot.send_message(match["chat_id"], "Next turn. Batsman, choose a number:", reply_markup=number_buttons())
 
-            text = (
-                f"Over: {user_match['over']:.1f}\n"
-                f"{batting_name} chose {user_match['batsman_num']}, {bowling_name} chose {user_match['bowler_num']}.\n"
-                f"Runs scored: {runs}\n"
-                f"Score: {user_match['scores'][user_match['batting']]}\n\n"
-                f"{batting_name} to bat. Choose your number:"
-            )
-            user_match["turn"] = user_match["batting"]
-            user_match["batsman_num"] = None
-            user_match["bowler_num"] = None
-            context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, reply_markup=number_buttons())
-            save_all()
-            query.answer()
-            return
 def main():
+    load_data()
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -303,11 +282,14 @@ def main():
     dp.add_handler(CommandHandler("help", help_command))
     dp.add_handler(CommandHandler("profile", profile))
     dp.add_handler(CommandHandler("daily", daily))
-    dp.add_handler(CommandHandler("pm", pm_command))
-    dp.add_handler(CallbackQueryHandler(join_match, pattern=r"^join_"))
-    dp.add_handler(CallbackQueryHandler(number_handler, pattern=r"^num_"))
+    dp.add_handler(CommandHandler("leaderboard", leaderboard))
+    dp.add_handler(CommandHandler("add", add_coins))
+    dp.add_handler(CommandHandler("pm", pm))
 
-    print("Bot started. Press Ctrl+C to stop.")
+    dp.add_handler(CallbackQueryHandler(join_match_callback, pattern=r"^join_"))
+    dp.add_handler(CallbackQueryHandler(toss_choice, pattern=r"^toss_"))
+    dp.add_handler(CallbackQueryHandler(handle_number, pattern=r"^num_"))
+
     updater.start_polling()
     updater.idle()
 
