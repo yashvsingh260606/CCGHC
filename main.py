@@ -2,7 +2,6 @@ import random
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
 
-# Replace with your actual bot token
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 
 matches = {}
@@ -114,7 +113,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Only toss winner can choose to bat or bowl.")
         return
 
-    choice = query.data.split("_")[1]  # 'bat' or 'bowl'
+    choice = query.data.split("_")[1]
 
     if choice == "bat":
         match["batsman"] = match["toss_winner"]
@@ -182,19 +181,21 @@ async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         match["bowler_choice"] = shot_value
-
         b = match["batsman_choice"]
         w = match["bowler_choice"]
 
         if b == w:
-            # OUT
-            text = f"{match['batsman'].first_name} is OUT!\nRuns scored: {match['score']}"
+            text = (
+                f"Batsman chose: {b}\n"
+                f"Bowler chose: {w}\n\n"
+                f"{match['batsman'].first_name} is OUT!\n"
+                f"Total Score: {match['score']}"
+            )
             if match["innings"] == 1:
                 match["target"] = match["score"] + 1
                 match["innings"] = 2
                 match["score"] = 0
                 match["balls"] = 0
-                # Swap batsman and bowler
                 match["batsman"], match["bowler"] = match["bowler"], match["batsman"]
                 match["waiting_for"] = "batsman"
                 keyboard = [
@@ -208,7 +209,6 @@ async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
             else:
-                # Match Over
                 if match["score"] >= match["target"]:
                     winner = match["batsman"]
                 else:
@@ -221,9 +221,12 @@ async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             match["score"] += b
             match["balls"] += 1
-
             if match["innings"] == 2 and match["score"] >= match["target"]:
-                text = f"{match['batsman'].first_name} scored {match['score']} runs and won the match!"
+                text = (
+                    f"Batsman chose: {b}\n"
+                    f"Bowler chose: {w}\n\n"
+                    f"{match['batsman'].first_name} scored {match['score']} runs and won the match!"
+                )
                 await query.edit_message_text(text)
                 del matches[chat_id]
                 await query.answer()
@@ -235,25 +238,22 @@ async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(4, 7)],
             ]
             await query.edit_message_text(
-    f"{match['batsman'].first_name} chose: {b}\n"
-    f"{match['bowler'].first_name} chose: {w}\n"
-    f"Runs Scored: {b}\n"
-    f"Total Score: {match['score']}\n\n"
-    f"{match['batsman'].first_name}, play your next shot (1-6):",
-    reply_markup=InlineKeyboardMarkup(keyboard),
+                f"Batsman chose: {b}\n"
+                f"Bowler chose: {w}\n"
+                f"Total Score: {match['score']}\n\n"
+                f"{match['batsman'].first_name}, play your next shot (1-6):",
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
         await query.answer()
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("start_pvp", start_pvp))
     app.add_handler(CallbackQueryHandler(join_match, pattern="^join_match$"))
     app.add_handler(CallbackQueryHandler(toss_choice, pattern="^toss_(heads|tails)$"))
     app.add_handler(CallbackQueryHandler(choose_play, pattern="^choose_(bat|bowl)$"))
     app.add_handler(CallbackQueryHandler(play_turn, pattern="^shot_[1-6]$"))
-
     print("Bot started!")
     app.run_polling()
 
