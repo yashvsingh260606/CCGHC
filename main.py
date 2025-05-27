@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # Replace this with your bot token
+BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace this with your bot token
 
 USERS_FILE = "users.json"
 MATCHES_FILE = "matches.json"
