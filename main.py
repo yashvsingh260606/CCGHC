@@ -145,6 +145,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     batsman_num = num
 
     if batsman_num == bowler_num:
+        # Wicket
         text = (
             f"{match['batsman'].first_name} got OUT!\n"
             f"Ball: {match['balls_played'] + 1}\n"
@@ -153,6 +154,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if match["innings"] == 1:
             match["target"] = match["batsman_score"] + 1
             match["innings"] = 2
+            # Swap roles
             match["batsman"], match["bowler"] = match["bowler"], match["batsman"]
             match["batsman_score"] = 0
             match["balls_played"] = 0
@@ -166,6 +168,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
             return
         else:
+            # Match over
             batsman_total = match["batsman_score"]
             bowler_total = match["bowler_score"]
             if batsman_total >= match["target"]:
@@ -181,6 +184,7 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         match["balls_played"] += 1
 
         if match["innings"] == 2 and match["batsman_score"] >= match["target"]:
+            # Batsman won
             text = (
                 f"{match['batsman'].first_name} scored {match['batsman_score']} runs and won the match!\n"
             )
@@ -195,7 +199,6 @@ async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Ball: {match['balls_played']}"
         )
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
