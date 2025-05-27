@@ -1,14 +1,72 @@
 import random
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
+from datetime import datetime, timedelta
 
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 
 matches = {}
+user_data = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to the Hand Cricket PvP Bot!\nUse /start_pvp to begin a new match.")
+def get_emoji_coins():
+    # Returns coin emoji if possible, else fallback to text emoji
+    try:
+        return "🪙"  # Coin emoji (if supported)
+    except:
+        return "💰"  # fallback coin emoji
 
+async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    uid = user.id
+    if uid in user_data:
+        await update.message.reply_text("You are already registered!")
+        return
+    user_data[uid] = {
+        "name": user.first_name,
+        "balance": 4000,
+        "wins": 0,
+        "loss": 0,
+        "last_daily": None
+    }
+    coin = get_emoji_coins()
+    await update.message.reply_text(f"Registered successfully! You received 4000 {coin} CCG.")
+
+async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    uid = user.id
+    coin = get_emoji_coins()
+    if uid not in user_data:
+        await update.message.reply_text("Please register first using /register.")
+        return
+    last_daily = user_data[uid].get("last_daily")
+    now = datetime.utcnow()
+    if last_daily and now - last_daily < timedelta(hours=24):
+        next_time = last_daily + timedelta(hours=24)
+        remaining = next_time - now
+        hours = remaining.seconds // 3600
+        minutes = (remaining.seconds % 3600) // 60
+        await update.message.reply_text(f"You have already claimed your daily coins. Come back in {hours}h {minutes}m.")
+        return
+    user_data[uid]["balance"] += 3000
+    user_data[uid]["last_daily"] = now
+    await update.message.reply_text(f"Daily reward claimed! You received 3000 {coin} CCG.")
+
+async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    uid = user.id
+    if uid not in user_data:
+        await update.message.reply_text("You are not registered yet. Use /register to start.")
+        return
+    data = user_data[uid]
+    coin = get_emoji_coins()
+    text = (
+        f"Name: {data['name']}\n"
+        f"ID: {uid}\n"
+        f"Balance: {data['balance']} {coin} CCG\n"
+        f"Wins: {data['wins']}\n"
+        f"Loss: {data['loss']}"
+    )
+    await update.message.reply_text(text)
 async def start_pvp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -254,8 +312,11 @@ def main():
     app.add_handler(CallbackQueryHandler(toss_choice, pattern="^toss_(heads|tails)$"))
     app.add_handler(CallbackQueryHandler(choose_play, pattern="^choose_(bat|bowl)$"))
     app.add_handler(CallbackQueryHandler(play_turn, pattern="^shot_[1-6]$"))
+
+    # Add the new commands here
+    app.add_handler(CommandHandler("register", register))
+    app.add_handler(CommandHandler("daily", daily))
+    app.add_handler(CommandHandler("profile", profile))
+
     print("Bot started!")
     app.run_polling()
-
-if __name__ == "__main__":
-    main()
