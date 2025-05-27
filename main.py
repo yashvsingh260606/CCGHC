@@ -402,3 +402,5 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 save_matches()
                 await query.edit_message_text(text, reply_markup=get_buttons())
+        if __name__ == "__main__":
+    application.run_polling()
