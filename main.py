@@ -275,7 +275,7 @@ def handle_number(update: Update, context: CallbackContext):
 
 def main():
     load_data()
-    updater = Updater(BOT_TOKEN, use_context=True)
+    updater = Updater(BOT_TOKEN,use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
