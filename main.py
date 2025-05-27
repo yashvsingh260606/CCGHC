@@ -5,7 +5,7 @@ import random
 import time
 from datetime import datetime, timedelta
 
-from telegram import (
+from telegram.constants import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 )
 from telegram.ext import (
