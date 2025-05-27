@@ -1,5 +1,3 @@
-# Part 1 - Telegram Hand Cricket PvP Bot
-
 import json
 import random
 import os
@@ -273,7 +271,6 @@ async def pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     matches[match_id]["message_id"] = msg.message_id
     save_matches()
 # Part 2 - Callback Query Handler and Game Logic
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = str(query.from_user.id)
