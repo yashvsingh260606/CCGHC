@@ -8,7 +8,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 )
 
-TOKEN = "YOUR_BOT_TOKEN"
+TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 ADMIN_IDS = [123456789]  # Replace with actual admin user IDs
 
 USERS_FILE = "users.json"
