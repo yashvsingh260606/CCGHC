@@ -1,23 +1,17 @@
-from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update
 import os
-import logging
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
 
 TOKEN = os.getenv("TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Bot is running.")
+    print(f"Received /start from {update.effective_user.first_name}")
+    await update.message.reply_text("Hello, bot is working!")
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-
-    print("Bot started.")
+    print("Bot started polling...")
     app.run_polling()
 
 if __name__ == "__main__":
