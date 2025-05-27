@@ -272,7 +272,7 @@ async def shot_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Now *{match['bowler'].first_name}* can bowl!\n\n"
             f"Over : {match['balls']//6}.{match['balls']%6}\n\n"
             f"🏏 Batter : *{match['batsman'].first_name}*\n"
-            f"🎳 Bowler : *{match['bowler'].first_name}*\n\n"
+            f"⚾ Bowler : *{match['bowler'].first_name}*\n\n"
             f"Next Move:\n"
             f"__{match['bowler'].first_name}, play your next bowl!__",
             reply_markup=InlineKeyboardMarkup(get_buttons()),
@@ -306,7 +306,7 @@ async def shot_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = (
                 f"Over : {balls//6}.{balls%6}\n\n"
                 f"🏏 Batter : *{batsman.first_name}*\n"
-                f"🎳 Bowler : *{bowler.first_name}*\n\n"
+                f"⚾ Bowler : *{bowler.first_name}*\n\n"
                 f"{batsman.first_name} is *OUT*!\n"
                 f"Final Score: *{score}* Runs\n\n"
             )
@@ -364,7 +364,7 @@ async def shot_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text = (
                     f"Over : {balls//6}.{balls%6}\n\n"
                     f"🏏 Batter : *{batsman.first_name}*\n"
-                    f"🎳 Bowler : *{bowler.first_name}*\n\n"
+                    f"⚾ Bowler : *{bowler.first_name}*\n\n"
                     f"{batsman.first_name} scored *{batsman_number}* runs.\n"
                     f"Total Score: *{score}* / {balls} balls\n\n"
                     f"🏆 {batsman.first_name} reached the target!\n"
@@ -379,7 +379,7 @@ async def shot_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text = (
                     f"Over : {balls//6}.{balls%6}\n\n"
                     f"🏏 Batter : *{batsman.first_name}*\n"
-                    f"🎳 Bowler : *{bowler.first_name}*\n\n"
+                    f"⚾ Bowler : *{bowler.first_name}*\n\n"
                     f"{batsman.first_name} scored *{batsman_number}* runs.\n"
                     f"Total Score: *{score}* / {balls} balls\n\n"
                     f"{match['batsman'].first_name}, play your next shot!"
