@@ -225,4 +225,10 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(start_pvp, pattern="^start_pvp$"))
-    app.add_handler
+    app.add_handler(CallbackQueryHandler(join_match, pattern="^join_match$"))
+    app.add_handler(CallbackQueryHandler(toss_choice, pattern="^toss_(heads|tails)$"))
+    app.add_handler(CallbackQueryHandler(choose_play, pattern="^(bat|bowl)$"))
+    app.add_handler(CallbackQueryHandler(play_turn, pattern="^num_[1-6]$"))
+
+    print("Bot started...")
+    app.run_polling()
