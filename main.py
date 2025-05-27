@@ -414,4 +414,160 @@ def main():
 
 if __name__ == "__main__":
     main()
-    await query.answer()
+await query.answer()
+# Handle shot selection during play
+async def shot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = query.message.chat.id
+    match = matches.get(chat_id)
+
+    if not match or match["state"] != "playing":
+        await query.answer("No active game right now.")
+        return
+
+    user = query.from_user
+    data = query.data
+
+    # Validate shot selection
+    if not data.startswith("shot_"):
+        await query.answer()
+        return
+
+    number = int(data.split("_")[1])
+
+    # Whose turn?
+    if match["waiting_for"] == "batsman":
+        if user.id != match["batsman"].id:
+            await query.answer("Wait for your turn to bat!")
+            return
+        match["batsman_choice"] = number
+        match["waiting_for"] = "bowler"
+
+        await query.edit_message_text(
+            f"{match['batsman'].first_name} chose their shot.\n"
+            f"Now, {match['bowler'].first_name} can choose the ball."
+        )
+        await query.answer()
+
+    elif match["waiting_for"] == "bowler":
+        if user.id != match["bowler"].id:
+            await query.answer("Wait for your turn to bowl!")
+            return
+        match["bowler_choice"] = number
+
+        # Reveal choices and update score
+        b_choice = match["batsman_choice"]
+        bow_choice = match["bowler_choice"]
+
+        text = (
+            f"Over : {match['balls']//6}.{match['balls']%6 + 1}\n\n"
+            f"🏏 Batter : {match['batsman'].first_name}\n"
+            f"⚾ Bowler : {match['bowler'].first_name}\n\n"
+            f"{match['batsman'].first_name} chose {b_choice}\n"
+            f"{match['bowler'].first_name} chose {bow_choice}\n\n"
+        )
+
+        if b_choice == bow_choice:
+            text += (
+                f"💥 {match['batsman'].first_name} is OUT!\n\n"
+            )
+            # End innings or match logic
+            if match["innings"] == 1:
+                match["innings"] = 2
+                match["target"] = match["score"] + 1
+                match["score"] = 0
+                match["balls"] = 0
+                # Swap batsman and bowler for second innings
+                match["batsman"], match["bowler"] = match["bowler"], match["batsman"]
+                match["waiting_for"] = "batsman"
+
+                text += (
+                    f"Target for {match['batsman'].first_name} is {match['target']} runs.\n\n"
+                    f"🏏 Batter: {match['batsman'].first_name}\n"
+                    f"⚾ Bowler: {match['bowler'].first_name}\n\n"
+                    f"{match['batsman'].first_name}, play your shot:"
+                )
+                keyboard = shot_buttons()
+                await query.edit_message_text(
+                    text, reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                await query.answer()
+                return
+            else:
+                # Match finished, bowler wins
+                match["state"] = "finished"
+                match["players"][1 if match["batsman"] == match["players"][0] else 0]["wins"] += 1
+                match["players"][0 if match["batsman"] == match["players"][0] else 1]["losses"] += 1
+
+                text += (
+                    f"🏆 {match['bowler'].first_name} wins the match!\n\n"
+                    f"Use /start_pvp to play again."
+                )
+                await query.edit_message_text(text)
+                matches.pop(chat_id)
+                await query.answer()
+                return
+        else:
+            match["score"] += b_choice
+            match["balls"] += 1
+
+            # Check chase condition in second innings
+            if match["innings"] == 2 and match["score"] >= match["target"]:
+                match["state"] = "finished"
+                match["players"][0 if match["batsman"] == match["players"][0] else 1]["wins"] += 1
+                match["players"][1 if match["batsman"] == match["players"][0] else 0]["losses"] += 1
+
+                text += (
+                    f"{match['batsman'].first_name} scored {match['score']} runs.\n"
+                    f"🏆 {match['batsman'].first_name} wins the match!\n\n"
+                    f"Use /start_pvp to play again."
+                )
+                await query.edit_message_text(text)
+                matches.pop(chat_id)
+                await query.answer()
+                return
+
+            text += (
+                f"{match['batsman'].first_name} scored {b_choice} runs.\n"
+                f"Total Score: {match['score']}\n\n"
+                f"{match['batsman'].first_name}, play your next shot!"
+            )
+            match["waiting_for"] = "batsman"
+            keyboard = shot_buttons()
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.answer()
+
+# Leaderboard command based on coin balance
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not users:
+        await update.message.reply_text("No users registered yet.")
+        return
+    sorted_users = sorted(users.items(), key=lambda x: x[1]["balance"], reverse=True)
+    text = "**🏅 Leaderboard - Top Coin Holders 🏅**\n\n"
+    for i, (uid, data) in enumerate(sorted_users[:10], 1):
+        text += f"{i}. {data['name']} - {data['balance']} CCG coins\n"
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+# Command handlers registration
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("register", register))
+    app.add_handler(CommandHandler("daily", daily))
+    app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("start_pvp", start_pvp))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("add", add_coins))
+
+    app.add_handler(CallbackQueryHandler(join_match, pattern="join_match"))
+    app.add_handler(CallbackQueryHandler(toss_choice, pattern="toss_"))
+    app.add_handler(CallbackQueryHandler(choose_play, pattern="choose_"))
+    app.add_handler(CallbackQueryHandler(shot_handler, pattern="shot_"))
+
+    print("Bot started...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
