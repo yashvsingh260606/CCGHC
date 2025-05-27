@@ -1,573 +1,296 @@
 import json
-import random
-import os
-from datetime import datetime, timedelta
+import time
+import threading
 from telegram import (
+    Bot,
     Update,
-    InlineKeyboardMarkup,
     InlineKeyboardButton,
+    InlineKeyboardMarkup,
 )
 from telegram.ext import (
-    Application,
+    Updater,
     CommandHandler,
     CallbackQueryHandler,
-    ContextTypes,
+    CallbackContext,
+    ConversationHandler,
 )
+import logging
 
-# --- SET YOUR BOT TOKEN HERE ---
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ===== BOT TOKEN HERE =====
 BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 
-# --- ADMIN USER IDS FOR /add COMMAND ---
-ADMINS = [123456789]  # Replace with your Telegram user IDs
+# ===== ADMINS IDS HERE ===== (as strings)
+admins = ["123456789", "987654321"]  # replace with your admin user IDs as strings
 
-# --- FILE PATHS ---
-USERS_FILE = "users.json"
-MATCHES_FILE = "matches.json"
+# ===== FILES FOR DATA PERSISTENCE =====
+USERS_FILE = "users_data.json"
+MATCHES_FILE = "matches_data.json"
 
-# --- LOAD / SAVE USER DATA ---
-def load_users():
-    if os.path.exists(USERS_FILE):
+# ===== GLOBAL DATA =====
+users = {}   # key = user_id(str), value = dict with coins, wins, last_daily timestamp
+matches = {} # key = match_id(str), value = match data dict
+
+# ===== MATCH CONSTANTS =====
+MAX_WICKETS = 1
+INACTIVITY_LIMIT = 20 * 60  # 20 minutes inactivity timeout in seconds
+
+# ===== UTILS =====
+
+def load_data():
+    global users, matches
+    try:
         with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_users():
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
-
-# --- LOAD / SAVE MATCH DATA ---
-def load_matches():
-    if os.path.exists(MATCHES_FILE):
+            users = json.load(f)
+    except FileNotFoundError:
+        users = {}
+    try:
         with open(MATCHES_FILE, "r") as f:
-            return json.load(f)
-    return {}
+            matches = json.load(f)
+    except FileNotFoundError:
+        matches = {}
 
-def save_matches():
+def save_data():
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
     with open(MATCHES_FILE, "w") as f:
-        json.dump(matches, f)
+        json.dump(matches, f, indent=2)
 
-# --- GLOBAL DATA ---
-users = load_users()     # user_id(str) -> user data dict
-matches = load_matches() # match_id(str) -> match data dict
+def is_admin(user_id: str) -> bool:
+    return user_id in admins
 
-# --- COMMANDS ---
+def format_match_id():
+    # Generate simple unique match ID based on timestamp
+    return str(int(time.time()*1000))[-6:]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    if user_id not in users:
-        users[user_id] = {
-            "name": update.effective_user.first_name,
-            "coins": 4000,
-            "wins": 0,
-            "losses": 0,
-            "last_daily": None,
-            "in_match": None,
-        }
-        save_users()
+def get_user(uid):
+    if uid not in users:
+        users[uid] = {"coins": 1000, "wins": 0, "last_daily": 0}
+        save_data()
+    return users[uid]
+
+def current_time():
+    return int(time.time())
+
+# Button keyboard for numbers 1 to 6, two rows
+def number_buttons():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("1", callback_data='num_1'),
+         InlineKeyboardButton("2", callback_data='num_2'),
+         InlineKeyboardButton("3", callback_data='num_3')],
+        [InlineKeyboardButton("4", callback_data='num_4'),
+         InlineKeyboardButton("5", callback_data='num_5'),
+         InlineKeyboardButton("6", callback_data='num_6')],
+    ])
+
+# Start the bot (loading data)
+def init_bot():
+    load_data()
+    print("Data loaded, bot ready.")
+
+# Call init_bot() once when running this part
+init_bot()
+# ===== COMMAND HANDLERS =====
+
+def start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    uid = str(user.id)
+    get_user(uid)  # ensure user in users dict
+    save_data()
+
     text = (
-        f"Welcome {update.effective_user.first_name}!\n\n"
-        "Use /help to see all commands.\n"
-        "You start with 4000 coins."
+        f"Hello {user.first_name}!\n\n"
+        "Welcome to Hand Cricket Bot.\n\n"
+        "Commands:\n"
+        "/pm <bet> - Create a player-vs-player match with optional bet (e.g. /pm 200)\n"
+        "/leaderboard - Show leaderboard\n"
+        "/daily - Claim your daily coins\n"
+        "/profile - Show your profile\n"
+        "/help - Show help message"
     )
-    await update.message.reply_text(text)
+    update.message.reply_text(text)
 
-async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    if user_id in users:
-        await update.message.reply_text("You are already registered.")
-        return
-    users[user_id] = {
-        "name": update.effective_user.first_name,
-        "coins": 4000,
-        "wins": 0,
-        "losses": 0,
-        "last_daily": None,
-        "in_match": None,
-    }
-    save_users()
-    await update.message.reply_text(
-        f"Registered! You received 4000 coins, {update.effective_user.first_name}."
-    )
-
-async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    if user_id not in users:
-        await update.message.reply_text("You are not registered. Use /register.")
-        return
-    last_daily = users[user_id].get("last_daily")
-    now = datetime.utcnow()
-    if last_daily:
-        last = datetime.fromisoformat(last_daily)
-        if now - last < timedelta(hours=24):
-            await update.message.reply_text(
-                "You have already claimed daily coins in the last 24 hours."
-            )
-            return
-    users[user_id]["coins"] += 3000
-    users[user_id]["last_daily"] = now.isoformat()
-    save_users()
-    await update.message.reply_text("You received 3000 daily coins!")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    commands = [
-        "/start - Welcome message",
-        "/register - Register and get 4000 coins",
-        "/daily - Get 3000 coins once per 24h",
-        "/pm - Play a match",
-        "/leaderboard - Top players by wins",
-        "/profile - Show your profile",
-    ]
-    help_text = "Available Commands:\n" + "\n".join(commands)
-    await update.message.reply_text(help_text)
-
-async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    if user_id not in users:
-        await update.message.reply_text("You are not registered. Use /register.")
-        return
-    u = users[user_id]
+def help_command(update: Update, context: CallbackContext):
     text = (
-        f"{u['name']}'s Profile\n\n"
-        f"Name: {u['name']}\n"
-        f"ID: {user_id}\n"
-        f"Purse: {u['coins']} coins\n"
-        f"Wins: {u['wins']}\n"
-        f"Losses: {u['losses']}"
+        "Available commands:\n"
+        "/pm <bet> - Create or join a PVP match with optional bet\n"
+        "/leaderboard - View leaderboard (wins and coins, use arrows)\n"
+        "/daily - Claim daily coins bonus\n"
+        "/profile - See your stats\n"
+        "/help - Show this message"
     )
-    await update.message.reply_text(text)
+    update.message.reply_text(text)
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not users:
-        await update.message.reply_text("No players registered yet.")
-        return
-    sorted_users = sorted(users.values(), key=lambda x: x.get("wins", 0), reverse=True)
-    text = "🏆 Leaderboard (Top 10 by Wins) 🏆\n\n"
-    for i, u in enumerate(sorted_users[:10], start=1):
-        text += f"{i}. {u['name']} - Wins: {u.get('wins',0)}\n"
-    await update.message.reply_text(text)
+def profile(update: Update, context: CallbackContext):
+    uid = str(update.effective_user.id)
+    user = get_user(uid)
+    text = (
+        f"Your Profile:\n"
+        f"Coins: {user['coins']}\n"
+        f"Wins: {user['wins']}"
+    )
+    update.message.reply_text(text)
 
-async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMINS:
-        await update.message.reply_text("You are not authorized to use this command.")
+def daily(update: Update, context: CallbackContext):
+    uid = str(update.effective_user.id)
+    user = get_user(uid)
+    now = current_time()
+
+    if now - user.get("last_daily", 0) < 24 * 3600:
+        update.message.reply_text("You already claimed your daily coins. Come back tomorrow!")
         return
+
+    daily_coins = 500
+    user["coins"] += daily_coins
+    user["last_daily"] = now
+    save_data()
+
+    update.message.reply_text(f"Daily claimed! You received {daily_coins} coins.")
+
+# ----- Match Creation Command -----
+
+def pm_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    uid = str(user.id)
+    get_user(uid)
+
     args = context.args
-    if len(args) != 2:
-        await update.message.reply_text("Usage: /add <user_id> <coins>")
-        return
-    target_id, coins = args[0], args[1]
-    if target_id not in users:
-        await update.message.reply_text("User not found.")
-        return
-    try:
-        coins = int(coins)
-        if coins <= 0:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("Coins must be a positive integer.")
-        return
-    users[target_id]["coins"] += coins
-    save_users()
-    await update.message.reply_text(
-        f"Added {coins} coins to {users[target_id]['name']} (ID: {target_id})."
-    )
-# --- UTILITY FUNCTIONS ---
+    bet = 0
+    if args and args[0].isdigit():
+        bet = int(args[0])
 
-def create_choice_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("1", callback_data="num_1"),
-         InlineKeyboardButton("2", callback_data="num_2"),
-         InlineKeyboardButton("3", callback_data="num_3")],
-        [InlineKeyboardButton("4", callback_data="num_4"),
-         InlineKeyboardButton("5", callback_data="num_5"),
-         InlineKeyboardButton("6", callback_data="num_6")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    # Create match ID
+    match_id = format_match_id()
 
-def generate_match_id():
-    return str(random.randint(100000, 999999))
-
-def opponent_waiting_text(user_name):
-    return f"Waiting for an opponent...\nShare your Match ID to invite a friend."
-
-# --- MATCH COMMANDS ---
-
-async def pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start or join a Player vs Player match."""
-    user_id = str(update.effective_user.id)
-    if user_id not in users:
-        await update.message.reply_text("You are not registered. Use /register.")
-        return
-    if users[user_id]["in_match"]:
-        await update.message.reply_text("You are already in a match.")
-        return
-
-    # If user supplied a match ID, try to join that match
-    if context.args:
-        join_id = context.args[0]
-        if join_id not in matches:
-            await update.message.reply_text("Match ID not found.")
-            return
-        match = matches[join_id]
-        if len(match["players"]) >= 2:
-            await update.message.reply_text("This match is full.")
-            return
-        if user_id in match["players"]:
-            await update.message.reply_text("You are already in this match.")
-            return
-        # Add player 2
-        match["players"].append(user_id)
-        match["state"] = "toss"
-        match["toss_winner"] = None
-        match["batting"] = None
-        match["innings"] = 1
-        match["scores"] = {match["players"][0]: 0, match["players"][1]: 0}
-        match["wickets"] = {match["players"][0]: 0, match["players"][1]: 0}
-        match["balls"] = 0
-        match["choices"] = {}
-        match["turn"] = None  # "batsman" or "bowler"
-        match["message_id"] = None
-        match["chat_id"] = update.effective_chat.id
-        matches[join_id] = match
-        users[user_id]["in_match"] = join_id
-        users[match["players"][0]]["in_match"] = join_id
-        save_matches()
-        save_users()
-
-        # Send starting message and prompt toss
-        p1_name = users[match["players"][0]]["name"]
-        p2_name = users[match["players"][1]]["name"]
-        text = (
-            f"Match {join_id} started between {p1_name} and {p2_name}!\n\n"
-            "Deciding toss... Each player, choose Heads or Tails.\n"
-            "Use /toss to make your choice."
-        )
-        await update.message.reply_text(text)
-        return
-
-    # Otherwise, create a new match ID and wait for opponent
-    match_id = generate_match_id()
+    # Initialize match structure
     matches[match_id] = {
-        "players": [user_id],
-        "state": "waiting",
+        "players": [uid],
+        "bet": bet,
+        "state": "waiting",  # waiting for opponent to join
+        "created_at": current_time(),
+        "last_activity": current_time(),
+        "turn": None,
+        "innings": 1,
+        "scores": {uid: 0},
+        "wickets": 0,
+        "batting": uid,
+        "bowling": None,
+        "batsman_num": None,
+        "bowler_num": None,
+        "msg_id": None,
         "chat_id": update.effective_chat.id,
-        "message_id": None,
+        "max_wickets": MAX_WICKETS,
+        "over": 0.0,
     }
-    users[user_id]["in_match"] = match_id
-    save_matches()
-    save_users()
+    save_data()
 
-    await update.message.reply_text(
-        f"Match created! Your Match ID is: {match_id}\n"
-        "Share this ID with a friend to let them join using:\n"
-        f"/pm {match_id}\n\nWaiting for an opponent..."
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Join Match", callback_data=f"join_{match_id}")]
+    ])
+
+    update.message.reply_text(
+        f"{user.first_name} created a match with bet {bet} coins.\nPress Join to join!",
+        reply_markup=keyboard
     )
 
-# --- TOSS LOGIC ---
+# ----- Join Match Callback -----
 
-async def toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Players call toss: /toss heads or /toss tails"""
-    user_id = str(update.effective_user.id)
-    if user_id not in users or not users[user_id]["in_match"]:
-        await update.message.reply_text("You are not in any match.")
-        return
-    match_id = users[user_id]["in_match"]
-    match = matches.get(match_id)
-    if not match:
-        await update.message.reply_text("Match data not found.")
-        return
-    if match["state"] != "toss":
-        await update.message.reply_text("Toss is not active right now.")
-        return
-    if len(context.args) != 1:
-        await update.message.reply_text("Usage: /toss heads OR /toss tails")
-        return
-    choice = context.args[0].lower()
-    if choice not in ("heads", "tails"):
-        await update.message.reply_text("Choose 'heads' or 'tails'.")
-        return
-
-    if "toss_calls" not in match:
-        match["toss_calls"] = {}
-
-    if user_id in match["toss_calls"]:
-        await update.message.reply_text("You have already called the toss.")
-        return
-
-    match["toss_calls"][user_id] = choice
-    save_matches()
-
-    if len(match["toss_calls"]) < 2:
-        await update.message.reply_text("Waiting for opponent to call toss...")
-        return
-
-    # Both players have called toss - determine winner
-    toss_result = random.choice(["heads", "tails"])
-    p1 = match["players"][0]
-    p2 = match["players"][1]
-    p1_call = match["toss_calls"][p1]
-    p2_call = match["toss_calls"][p2]
-
-    winner = None
-    if p1_call == toss_result:
-        winner = p1
-    elif p2_call == toss_result:
-        winner = p2
-
-    if not winner:
-        # Rare case both called wrong? Pick randomly
-        winner = random.choice(match["players"])
-
-    match["toss_winner"] = winner
-    match["state"] = "choose_bat_bowl"
-    save_matches()
-
-    winner_name = users[winner]["name"]
-    text = (
-        f"Toss result: {toss_result.upper()}!\n"
-        f"{users[p1]['name']} called {p1_call}, {users[p2]['name']} called {p2_call}\n\n"
-        f"{winner_name} won the toss!\n"
-        "Use /bat or /bowl to choose your role first innings."
-    )
-    await update.message.reply_text(text)
-
-# --- CHOOSE BAT OR BOWL ---
-
-async def choose_role(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Choose batting or bowling after toss"""
-    user_id = str(update.effective_user.id)
-    if user_id not in users or not users[user_id]["in_match"]:
-        await update.message.reply_text("You are not in a match.")
-        return
-    match_id = users[user_id]["in_match"]
-    match = matches.get(match_id)
-    if not match or match["state"] != "choose_bat_bowl":
-        await update.message.reply_text("Not time to choose role now.")
-        return
-    if user_id != match["toss_winner"]:
-        await update.message.reply_text("Only toss winner can choose role.")
-        return
-    if not context.args:
-        await update.message.reply_text("Usage: /bat or /bowl")
-        return
-    choice = context.args[0].lower()
-    if choice not in ("bat", "bowl"):
-        await update.message.reply_text("Choose /bat or /bowl")
-        return
-
-    match["batting"] = user_id if choice == "bat" else [p for p in match["players"] if p != user_id][0]
-    match["bowling"] = [p for p in match["players"] if p != match["batting"]][0]
-    match["state"] = "in_progress"
-    match["innings"] = 1
-    match["scores"] = {p: 0 for p in match["players"]}
-    match["wickets"] = {p: 0 for p in match["players"]}
-    match["balls"] = 0
-    match["choices"] = {}
-    match["turn"] = "batsman"
-    save_matches()
-
-    bat_name = users[match["batting"]]["name"]
-    bowl_name = users[match["bowling"]]["name"]
-
-    text = (
-        f"{bat_name} will bat first.\n"
-        f"{bowl_name} will bowl first.\n\n"
-        f"Match started! {bat_name} to play first.\n"
-        f"Choose a number between 1-6."
-    )
-    sent_msg = await update.message.reply_text(text, reply_markup=create_choice_keyboard())
-    match["message_id"] = sent_msg.message_id
-    save_matches()
-
-# --- CALLBACK QUERY HANDLER FOR GAMEPLAY ---
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def join_match(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = str(query.from_user.id)
-    if user_id not in users or not users[user_id]["in_match"]:
-        await query.answer("You are not in a match.")
-        return
-    match_id = users[user_id]["in_match"]
-    match = matches.get(match_id)
-    if not match or match["state"] != "in_progress":
-        await query.answer("Game not in progress.")
-        return
+    user = query.from_user
+    uid = str(user.id)
 
-    chosen_num = int(query.data.split("_")[1])
-    p_bat = match["batting"]
-    p_bowl = match["bowling"]
-    turn = match["turn"]
+    data = query.data  # format join_<match_id>
+    _, match_id = data.split("_")
 
-    # Only allow batsman and bowler to press buttons
-    if user_id != p_bat and user_id != p_bowl:
-        await query.answer("You are not playing right now.")
+    if match_id not in matches:
+        query.answer("Match no longer available.")
         return
 
-    if user_id in match["choices"]:
-        await query.answer("You already chose your number this ball.")
+    match = matches[match_id]
+
+    if uid in match["players"]:
+        query.answer("You are already in this match.")
         return
 
-    match["choices"][user_id] = chosen_num
-    save_matches()
-    await query.answer(f"You chose {chosen_num}")
-
-    # If only one has chosen, wait for other
-    if len(match["choices"]) < 2:
-        # Show text to other player without revealing chosen number
-        if user_id == p_bat:
-            waiting_text = f"{users[p_bat]['name']} chose their number. Now it's {users[p_bowl]['name']}'s turn."
-        else:
-            waiting_text = f"{users[p_bowl]['name']} chose their number. Now it's {users[p_bat]['name']}'s turn."
-
-        # Edit the game message with waiting info
-        try:
-            await context.bot.edit_message_text(
-                chat_id=match["chat_id"],
-                message_id=match["message_id"],
-                text=waiting_text,
-                reply_markup=create_choice_keyboard(),
-            )
-        except:
-            pass
+    if len(match["players"]) >= 2:
+        query.answer("Match is full.")
         return
 
-    # Both players chose, resolve the ball
-    bat_num = match["choices"][p_bat]
-    bowl_num = match["choices"][p_bowl]
-    match["choices"] = {}
-    match["balls"] += 1
+    # Check if user has enough coins for bet
+    if match["bet"] > 0 and get_user(uid)["coins"] < match["bet"]:
+        query.answer("Not enough coins to join this bet match.")
+        return
 
-    # If numbers equal -> wicket
-    if bat_num == bowl_num:
-        match["wickets"][p_bat] += 1
-        wicket_fell = True
-    else:
-        match["scores"][p_bat] += bat_num
-        wicket_fell = False
+    # Add second player
+    match["players"].append(uid)
+    match["scores"][uid] = 0
+    match["state"] = "playing"
+    match["bowling"] = uid
+    match["turn"] = match["batting"]
+    match["last_activity"] = current_time()
 
-    # Format status text
+    # Deduct bet coins from both players if bet > 0
+    if match["bet"] > 0:
+        for player_uid in match["players"]:
+            user_data = get_user(player_uid)
+            user_data["coins"] -= match["bet"]
+
+    save_data()
+
+    # Show match start message and buttons
+    batter_name = context.bot.get_chat_member(match['chat_id'], int(match['batting'])).user.first_name
+    bowler_name = context.bot.get_chat_member(match['chat_id'], int(match['bowling'])).user.first_name
+
     text = (
-        f"Ball {match['balls']}:\n"
-        f"{users[p_bat]['name']} played {bat_num}\n"
-        f"{users[p_bowl]['name']} bowled {bowl_num}\n\n"
-    )
-    if wicket_fell:
-        text += f"WICKET! {users[p_bat]['name']} is out.\n"
-    else:
-        text += f"{bat_num} runs scored.\n"
-
-    text += (
-        f"Score: {match['scores'][p_bat]} / {match['wickets'][p_bat]}\n"
-        f"Overs: {match['balls'] // 6}.{match['balls'] % 6}\n\n"
+        f"Match started between:\n"
+        f"🏏 Batter: {batter_name}\n"
+        f"⚾ Bowler: {bowler_name}\n\n"
+        f"Over : 0.0\n"
+        f"{batter_name} to bat first.\n\n"
+        "Batter, choose your number:"
     )
 
-    # Check innings end conditions
-    max_wickets = 1  # Only one wicket to keep game simple
-    max_balls = 12   # 2 overs per innings for quick game
+    # Edit original message with buttons
+    query.edit_message_text(text=text, reply_markup=number_buttons())
 
-    if match["wickets"][p_bat] >= max_wickets or match["balls"] >= max_balls:
-        # End innings or match
-        if match["innings"] == 1:
-            # Switch innings
-            match["innings"] = 2
-            match["balls"] = 0
-            match["choices"] = {}
-            # Swap batting and bowling
-            match["batting"], match["bowling"] = match["bowling"], match["batting"]
-            match["turn"] = "batsman"
-            text += (
-                f"End of 1st innings.\n"
-                f"Target for {users[match['batting']]['name']}: {match['scores'][p_bat] + 1}\n\n"
-                f"{users[match['batting']]['name']} to bat now. Choose a number."
-            )
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=match["chat_id"],
-                    message_id=match["message_id"],
-                    text=text,
-                    reply_markup=create_choice_keyboard(),
-                )
-            except:
-                pass
-            save_matches()
-            return
-        else:
-            # Match over, decide winner
-            p1_score = match["scores"][match["players"][0]]
-            p2_score = match["scores"][match["players"][1]]
-            if p1_score > p2_score:
-                winner = match["players"][0]
-            elif p2_score > p1_score:
-                winner = match["players"][1]
-            else:
-                winner = None
+    save_data()
+    query.answer()
+# ----- Number Selection Handler -----
 
-            if winner:
-                win_name = users[winner]["name"]
-                text += f"Match Over!\nWinner: {win_name}\n"
-                users[winner]["wins"] += 1
-                loser = [p for p in match["players"] if p != winner][0]
-                users[loser]["losses"] += 1
-                # Winner coins reward
-                users[winner]["coins"] += 5000
-                save_users()
-            else:
-                text += "Match Over! It's a tie!\n"
+def number_handler(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user = query.from_user
+    uid = str(user.id)
+    data = query.data  # format num_1..6
 
-            # Clear match data from users
-            for p in match["players"]:
-                users[p]["in_match"] = None
-            save_users()
-
-            # Remove match from matches
-            if match_id in matches:
-                del matches[match_id]
-                save_matches()
-
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=match["chat_id"],
-                    message_id=match["message_id"],
-                    text=text,
-                )
-            except:
-                pass
-            return
-
-    # Continue innings
-    match["turn"] = "batsman"
-    save_matches()
-
-    try:
-        await context.bot.edit_message_text(
-            chat_id=match["chat_id"],
-            message_id=match["message_id"],
-            text=text,
-            reply_markup=create_choice_keyboard(),
-        )
-    except:
-        pass
-
-# --- MAIN SETUP ---
-
+    if not data.startswith
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("register", register))
-    application.add_handler(CommandHandler("daily", daily))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("profile", profile))
-    application.add_handler(CommandHandler("leaderboard", leaderboard))
-    application.add_handler(CommandHandler("add", add_coins))
-    application.add_handler(CommandHandler("pm", pm))
-    application.add_handler(CommandHandler("toss", toss))
-    application.add_handler(CommandHandler("bat", choose_role))
-    application.add_handler(CommandHandler("bowl", choose_role))
-    application.add_handler(CallbackQueryHandler(button_handler))
+    # Command handlers
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(CommandHandler("profile", profile))
+    dp.add_handler(CommandHandler("daily", daily))
+    dp.add_handler(CommandHandler("pm", pm_command))
 
-    print("Bot is running...")
-    application.run_polling()
+    # CallbackQuery handlers
+    dp.add_handler(CallbackQueryHandler(join_match, pattern=r"^join_\d+$"))
+    dp.add_handler(CallbackQueryHandler(number_handler, pattern=r"^num_[1-6]$"))
 
-if __name__ == "__main__":
+    # Start polling
+    updater.start_polling()
+    print("Bot started...")
+
+    updater.idle()
+
+if __name__ == '__main__':
     main()
