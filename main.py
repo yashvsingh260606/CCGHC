@@ -1,72 +1,89 @@
+import json
 import random
+import os
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
-from datetime import datetime, timedelta
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+)
 
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 
 matches = {}
-user_data = {}
+DATA_FILE = "players_data.json"
 
-def get_emoji_coins():
-    # Returns coin emoji if possible, else fallback to text emoji
-    try:
-        return "🪙"  # Coin emoji (if supported)
-    except:
-        return "💰"  # fallback coin emoji
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Welcome to the Hand Cricket PvP Bot!\nUse /register to register and get 4000 CCG.\nUse /daily to claim 3000 CCG daily.\nUse /profile to see your stats.\nUse /start_pvp to begin a PvP match!")
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    uid = user.id
-    if uid in user_data:
-        await update.message.reply_text("You are already registered!")
-        return
-    user_data[uid] = {
-        "name": user.first_name,
-        "balance": 4000,
-        "wins": 0,
-        "loss": 0,
-        "last_daily": None
-    }
-    coin = get_emoji_coins()
-    await update.message.reply_text(f"Registered successfully! You received 4000 {coin} CCG.")
+    data = load_data()
+    uid = str(user.id)
+
+    if uid in data:
+        await update.message.reply_text("You're already registered!")
+    else:
+        data[uid] = {
+            "name": user.first_name,
+            "balance": 4000,
+            "wins": 0,
+            "losses": 0,
+            "last_daily": "",
+        }
+        save_data(data)
+        await update.message.reply_text("Registration complete! You received 4000 CCG!")
 
 async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from datetime import datetime
+
     user = update.effective_user
-    uid = user.id
-    coin = get_emoji_coins()
-    if uid not in user_data:
-        await update.message.reply_text("Please register first using /register.")
+    uid = str(user.id)
+    data = load_data()
+    today = datetime.utcnow().date().isoformat()
+
+    if uid not in data:
+        await update.message.reply_text("You're not registered. Use /register first.")
         return
-    last_daily = user_data[uid].get("last_daily")
-    now = datetime.utcnow()
-    if last_daily and now - last_daily < timedelta(hours=24):
-        next_time = last_daily + timedelta(hours=24)
-        remaining = next_time - now
-        hours = remaining.seconds // 3600
-        minutes = (remaining.seconds % 3600) // 60
-        await update.message.reply_text(f"You have already claimed your daily coins. Come back in {hours}h {minutes}m.")
-        return
-    user_data[uid]["balance"] += 3000
-    user_data[uid]["last_daily"] = now
-    await update.message.reply_text(f"Daily reward claimed! You received 3000 {coin} CCG.")
+
+    if data[uid]["last_daily"] == today:
+        await update.message.reply_text("You've already claimed your daily CCG today!")
+    else:
+        data[uid]["balance"] += 3000
+        data[uid]["last_daily"] = today
+        save_data(data)
+        await update.message.reply_text("You've received 3000 CCG for your daily reward!")
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    uid = user.id
-    if uid not in user_data:
-        await update.message.reply_text("You are not registered yet. Use /register to start.")
-        return
-    data = user_data[uid]
-    coin = get_emoji_coins()
-    text = (
-        f"Name: {data['name']}\n"
-        f"ID: {uid}\n"
-        f"Balance: {data['balance']} {coin} CCG\n"
-        f"Wins: {data['wins']}\n"
-        f"Loss: {data['loss']}"
-    )
-    await update.message.reply_text(text)
+    uid = str(user.id)
+    data = load_data()
+
+    if uid not in data:
+        await update.message.reply_text("You're not registered. Use /register first.")
+    else:
+        p = data[uid]
+        await update.message.reply_text(
+            f"**Profile**\n"
+            f"Name: {p['name']}\n"
+            f"ID: {uid}\n"
+            f"Balance: {p['balance']} CCG\n"
+            f"Wins: {p['wins']}\n"
+            f"Losses: {p['losses']}",
+            parse_mode="Markdown"
+        )
+
 async def start_pvp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -115,33 +132,20 @@ async def join_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     await query.answer()
-
-async def toss_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.message.chat.id
-    match = matches.get(chat_id)
-    if not match or match["state"] != "toss":
-        await query.answer("No toss to choose.")
-        return
-
     user = query.from_user
-    if user.id != match["players"][0].id:
-        await query.answer("Only the first player can choose toss.")
-        return
-
+    chat_id = query.message.chat.id
     choice = query.data.split("_")[1]
+
+    match = matches[chat_id]
+    p1, p2 = match["players"]
     toss_result = random.choice(["heads", "tails"])
-    match["toss_choice"] = choice
-    match["toss_result"] = toss_result
 
-    if choice == toss_result:
-        match["toss_winner"] = match["players"][0]
-        match["toss_loser"] = match["players"][1]
-    else:
-        match["toss_winner"] = match["players"][1]
-        match["toss_loser"] = match["players"][0]
-
-    match["state"] = "choose_play"
+    winner = p1 if toss_result == choice else p2
+    match["toss_winner"] = winner
+    match["batting_first"] = None
+    match["state"] = "choose_bat_bowl"
 
     keyboard = [
         [
@@ -152,171 +156,119 @@ async def toss_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text(
         f"Toss result: {toss_result.capitalize()}\n"
-        f"{match['toss_winner'].first_name} won the toss.\n"
-        f"{match['toss_winner'].first_name}, choose to Bat or Bowl:",
+        f"{winner.first_name} won the toss! Choose to bat or bowl first:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     await query.answer()
 
-async def choose_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def choose_bat_bowl(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.message.chat.id
-    match = matches.get(chat_id)
-    if not match or match["state"] != "choose_play":
-        await query.answer("Not the right time to choose play.")
-        return
-
-    user = query.from_user
-    if user.id != match["toss_winner"].id:
-        await query.answer("Only toss winner can choose to bat or bowl.")
-        return
-
     choice = query.data.split("_")[1]
+    chat_id = query.message.chat.id
+    match = matches[chat_id]
 
-    if choice == "bat":
-        match["batsman"] = match["toss_winner"]
-        match["bowler"] = match["toss_loser"]
-    else:
-        match["bowler"] = match["toss_winner"]
-        match["batsman"] = match["toss_loser"]
-
-    match["state"] = "playing"
+    match["batting_first"] = match["toss_winner"] if choice == "bat" else next(p for p in match["players"] if p != match["toss_winner"])
+    match["scores"] = {str(p.id): 0 for p in match["players"]}
     match["innings"] = 1
-    match["score"] = 0
-    match["balls"] = 0
-    match["waiting_for"] = "batsman"
-    match["target"] = None
+    match["turn"] = 1
+    match["state"] = "playing"
 
-    keyboard = [
-        [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(1, 4)],
-        [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(4, 7)],
-    ]
+    await send_turn_message(chat_id, context)
 
-    await query.edit_message_text(
-        f"Game started!\n\n"
-        f"Batsman: {match['batsman'].first_name}\n"
-        f"Bowler: {match['bowler'].first_name}\n\n"
-        f"{match['batsman'].first_name}, play your shot (1-6):",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-    await query.answer()
+async def send_turn_message(chat_id, context):
+    match = matches[chat_id]
+    batting = match["batting_first"] if match["innings"] == 1 else next(p for p in match["players"] if p != match["batting_first"])
+    bowling = next(p for p in match["players"] if p != batting)
+
+    keyboard = [[InlineKeyboardButton(str(i), callback_data=f"play_{i}") for i in range(1, 4)],
+                [InlineKeyboardButton(str(i), callback_data=f"play_{i}") for i in range(4, 7)]]
+
+    message = f"**Innings {match['innings']}**\n" \
+              f"{batting.first_name}'s turn to bat.\nChoose a number between 1-6:"
+    await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def play_turn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.message.chat.id
-    match = matches.get(chat_id)
-    if not match or match["state"] != "playing":
-        await query.answer("Game not in progress.")
-        return
-
     user = query.from_user
-    data = query.data
+    chat_id = query.message.chat.id
+    match = matches[chat_id]
+    batting = match["batting_first"] if match["innings"] == 1 else next(p for p in match["players"] if p != match["batting_first"])
+    bowling = next(p for p in match["players"] if p != batting)
 
-    if not data.startswith("shot_"):
-        await query.answer()
+    if user.id != batting.id:
+        await query.answer("Not your turn!")
         return
 
-    shot_value = int(data.split("_")[1])
+    bat_choice = int(query.data.split("_")[1])
+    bowl_choice = random.randint(1, 6)
 
-    if match["waiting_for"] == "batsman" and user.id != match["batsman"].id:
-        await query.answer("Wait for your turn to play as batsman.", show_alert=True)
-        return
-    if match["waiting_for"] == "bowler" and user.id != match["bowler"].id:
-        await query.answer("Wait for your turn to play as bowler.", show_alert=True)
-        return
-
-    if match["waiting_for"] == "batsman":
-        match["batsman_choice"] = shot_value
-        match["waiting_for"] = "bowler"
-        keyboard = [
-            [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(1, 4)],
-            [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(4, 7)],
-        ]
-        await query.edit_message_text(
-            f"{match['batsman'].first_name} chose their shot.\n"
-            f"{match['bowler'].first_name}, bowl your number (1-6):",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-    else:
-        match["bowler_choice"] = shot_value
-        b = match["batsman_choice"]
-        w = match["bowler_choice"]
-
-        if b == w:
-            text = (
-                f"Batsman chose: {b}\n"
-                f"Bowler chose: {w}\n\n"
-                f"{match['batsman'].first_name} is OUT!\n"
-                f"Total Score: {match['score']}"
-            )
-            if match["innings"] == 1:
-                match["target"] = match["score"] + 1
-                match["innings"] = 2
-                match["score"] = 0
-                match["balls"] = 0
-                match["batsman"], match["bowler"] = match["bowler"], match["batsman"]
-                match["waiting_for"] = "batsman"
-                keyboard = [
-                    [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(1, 4)],
-                    [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(4, 7)],
-                ]
-                text += (
-                    f"\n\nInnings 2 begins.\n"
-                    f"{match['batsman'].first_name} needs {match['target']} runs to win.\n"
-                    f"{match['batsman'].first_name}, play your shot (1-6):"
-                )
-                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-            else:
-                if match["score"] >= match["target"]:
-                    winner = match["batsman"]
-                else:
-                    winner = match["bowler"]
-                text += f"\n\nMatch Over! Winner: {winner.first_name}"
-                await query.edit_message_text(text)
-                del matches[chat_id]
-            await query.answer()
-            return
+    if bat_choice == bowl_choice:
+        result = f"{batting.first_name} is OUT!\nThey scored {match['scores'][str(batting.id)]} runs."
+        if match["innings"] == 1:
+            match["innings"] = 2
+            await query.edit_message_text(result + "\n\nNext innings starting...")
+            await send_turn_message(chat_id, context)
         else:
-            match["score"] += b
-            match["balls"] += 1
-            if match["innings"] == 2 and match["score"] >= match["target"]:
-                text = (
-                    f"Batsman chose: {b}\n"
-                    f"Bowler chose: {w}\n\n"
-                    f"{match['batsman'].first_name} scored {match['score']} runs and won the match!"
-                )
-                await query.edit_message_text(text)
-                del matches[chat_id]
-                await query.answer()
-                return
+            await end_match(chat_id, context)
+    else:
+        match["scores"][str(batting.id)] += bat_choice
+        total = match["scores"][str(batting.id)]
+        result = f"{batting.first_name} chose {bat_choice}, {bowling.first_name} chose {bowl_choice}\n" \
+                 f"Total: {total}"
+        await query.edit_message_text(result)
+        await send_turn_message(chat_id, context)
+    await query.answer()
 
-            match["waiting_for"] = "batsman"
-            keyboard = [
-                [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(1, 4)],
-                [InlineKeyboardButton(str(i), callback_data=f"shot_{i}") for i in range(4, 7)],
-            ]
-            await query.edit_message_text(
-                f"Batsman chose: {b}\n"
-                f"Bowler chose: {w}\n"
-                f"Total Score: {match['score']}\n\n"
-                f"{match['batsman'].first_name}, play your next shot (1-6):",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-            )
-        await query.answer()
+async def end_match(chat_id, context):
+    match = matches[chat_id]
+    p1, p2 = match["players"]
+    s1 = match["scores"][str(p1.id)]
+    s2 = match["scores"][str(p2.id)]
+
+    if match["batting_first"].id == p1.id:
+        first, second = p1, p2
+        first_score, second_score = s1, s2
+    else:
+        first, second = p2, p1
+        first_score, second_score = s2, s1
+
+    if first_score > second_score:
+        winner, loser = first, second
+    elif second_score > first_score:
+        winner, loser = second, first
+    else:
+        winner = loser = None  # Tie
+
+    data = load_data()
+    if winner and loser:
+        data[str(winner.id)]["balance"] += 1000
+        data[str(winner.id)]["wins"] += 1
+        data[str(loser.id)]["losses"] += 1
+        message = f"**{winner.first_name} wins the match!**\n" \
+                  f"{first.first_name}: {first_score}\n{second.first_name}: {second_score}\nWinner gets 1000 CCG."
+    else:
+        message = f"The match is a tie!\n" \
+                  f"{first.first_name}: {first_score}\n{second.first_name}: {second_score}"
+
+    save_data(data)
+    await context.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+    del matches[chat_id]
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("start_pvp", start_pvp))
-    app.add_handler(CallbackQueryHandler(join_match, pattern="^join_match$"))
-    app.add_handler(CallbackQueryHandler(toss_choice, pattern="^toss_(heads|tails)$"))
-    app.add_handler(CallbackQueryHandler(choose_play, pattern="^choose_(bat|bowl)$"))
-    app.add_handler(CallbackQueryHandler(play_turn, pattern="^shot_[1-6]$"))
 
-    # Add the new commands here
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("register", register))
     app.add_handler(CommandHandler("daily", daily))
     app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("start_pvp", start_pvp))
 
-    print("Bot started!")
+    app.add_handler(CallbackQueryHandler(join_match, pattern="join_match"))
+    app.add_handler(CallbackQueryHandler(handle_toss, pattern="toss_"))
+    app.add_handler(CallbackQueryHandler(choose_bat_bowl, pattern="choose_"))
+    app.add_handler(CallbackQueryHandler(play_turn, pattern="play_"))
+
     app.run_polling()
+
+if __name__ == "__main__":
+    main()
