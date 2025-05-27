@@ -414,13 +414,13 @@ if match["status"] == "playing":
             save_matches(matches)
             await context.bot.edit_message_text(
                 chat_id=query.message.chat.id,
-                message_id=query.message.message_id,
+            message_id=query.message.message_id,
                 text=f"💥 OUT!\n\n"
                      f"👤 {match['bowling']} will now bat.\n"
                      f"🎯 Target: {match['target']} runs\n\n"
                      f"🏏 Let the 2nd innings begin!",
                 reply_markup=get_keyboard()
-            )
+          )
         else:
             # Second innings out, end match
             await process_match_end(context, match_id, match, query)
