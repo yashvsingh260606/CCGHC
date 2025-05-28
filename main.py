@@ -19,7 +19,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CallbackContext,
     MessageHandler,
-    Filters,
+    filters,
 )
 
 # ===== CONFIGURATION =====
