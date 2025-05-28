@@ -114,7 +114,6 @@ async def update_game_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
         if message_id in active_matches:
             del active_matches[message_id]
         logger.info(f"Cleared match state for message {message_id} due to edit error.")
-
 # --- Command Handlers ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -288,11 +287,13 @@ async def handle_join_match(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     logger.info(f"Opponent {opponent.full_name} joined match {message_id}.")
 
     initiator_name = users[match_state["initiator_id"]]["name"]
+    opponent_name = users[match_state["opponent_id"]]["name"]
+
     await update_game_message(
         context,
         match_state["chat_id"],
         match_state["message_id"],
-        f"🏏 Match between *{initiator_name}* and *{opponent.full_name}* has started!\n\n"
+        f"🏏 Match between *{initiator_name}* and *{opponent_name}*\n\n"
         f"*{initiator_name}*, please choose Heads or Tails for the toss.",
         reply_markup=get_toss_buttons()
     )
@@ -392,8 +393,6 @@ async def handle_bat_bowl_choice(update: Update, context: ContextTypes.DEFAULT_T
         f"*{batsman_name}*, please choose your number (1-6).",
         reply_markup=get_match_buttons()
     )
-
-
 async def handle_play_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles number choice during batting/bowling turns."""
     query = update.callback_query
@@ -441,7 +440,7 @@ async def handle_play_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 match_state["chat_id"],
                 match_state["message_id"],
                 f"🏏 Batter : *{batsman_name}*\n⚾ Bowler : *{bowler_name}*\n\n"
-                f"*{batsman_name}* chosen the number, now *{bowler_name}*'s turn.", # Corrected line
+                f"*{batsman_name}* chosen the number, now *{bowler_name}*'s turn.",
                 reply_markup=get_match_buttons()
             )
         elif player_id == bowler_id: # Bowler played, waiting for batsman
@@ -450,4 +449,262 @@ async def handle_play_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 match_state["chat_id"],
                 match_state["message_id"],
                 f"🏏 Batter : *{batsman_name}*\n⚾ Bowler : *{bowler_name}*\n\n"
-                f"*{bowler_
+                f"*{bowler_name}* chosen the number, now *{batsman_name}*'s turn.",
+                reply_markup=get_match_buttons()
+            )
+
+
+async def process_ball(context: ContextTypes.DEFAULT_TYPE, message_id: int):
+    """Processes the outcome of a single ball (after both players choose numbers)."""
+    match_state = active_matches[message_id]
+
+    batsman_id = match_state["current_batsman_id"]
+    bowler_id = match_state["current_bowler_id"]
+    batsman_name = users[batsman_id]["name"]
+    bowler_name = users[bowler_id]["name"]
+
+    batsman_choice = match_state["p1_last_choice"]
+    bowler_choice = match_state["p2_last_choice"]
+
+    match_state["current_ball"] += 1 # Increment total balls bowled in this innings
+    
+    # Calculate overs display (e.g., 0.1, 0.2, ..., 0.6, 1.0, 1.1)
+    overs_completed = (match_state['current_ball'] - 1) // 6
+    balls_in_current_over = (match_state['current_ball'] - 1) % 6 + 1
+    over_display = f"{overs_completed}.{balls_in_current_over}"
+
+    game_text = (
+        f"Over : {over_display}\n\n"
+        f"🏏 Batter : *{batsman_name}*\n"
+        f"⚾ Bowler : *{bowler_name}*\n\n"
+        f"*{batsman_name}* Bat {batsman_choice}\n"
+        f"*{bowler_name}* Bowl {bowler_choice}\n\n"
+    )
+
+    is_out = (batsman_choice == bowler_choice)
+
+    if is_out:
+        game_text += f"*{batsman_name}* is OUT! 💥\n"
+        if match_state["innings"] == 1:
+            match_state["target"] = match_state["batsman_score"] + 1 # Target is current score + 1
+            game_text += f"Total Score - {match_state['batsman_score']} Runs\n"
+            game_text += f"*{bowler_name}* Sets a target of {match_state['target']}!\n\n"
+            game_text += f"*{bowler_name}* will now Bat and *{batsman_name}* will now Bowl!"
+            
+            # Swap roles for second innings
+            match_state["current_batsman_id"], match_state["current_bowler_id"] = \
+                match_state["current_bowler_id"], match_state["current_batsman_id"]
+            match_state["batsman_score"] = 0 # Reset score for second innings
+            match_state["current_ball"] = 0 # Reset ball count for second innings
+            match_state["innings"] = 2
+            match_state["status"] = "batting" # Ready for second innings
+
+            await update_game_message(
+                context,
+                match_state["chat_id"],
+                match_state["message_id"],
+                game_text,
+                reply_markup=get_match_buttons()
+            )
+
+        elif match_state["innings"] == 2:
+            # Second innings, check if target was met before getting out
+            final_batsman_score = match_state["batsman_score"]
+            winner_id = None
+            loser_id = None
+            
+            if final_batsman_score >= match_state["target"]:
+                winner_id = batsman_id
+                loser_id = bowler_id
+                game_text += f"Total Score : {final_batsman_score} Runs\n"
+                game_text += f"*{users[winner_id]['name']}* wins by completing the target! 🎉"
+            else:
+                winner_id = bowler_id
+                loser_id = batsman_id
+                game_text += f"Total Score : {final_batsman_score} Runs\n"
+                game_text += f"*{users[winner_id]['name']}* wins by {match_state['target'] - 1 - final_batsman_score} runs! 🎉"
+            
+            await finish_match(context, message_id, winner_id, loser_id, match_state["bet_amount"], final_game_text=game_text)
+            return # Exit to prevent further game loop
+
+    else: # Not OUT, add runs to batsman's score
+        match_state["batsman_score"] += batsman_choice
+        game_text += f"Total Score : {match_state['batsman_score']} Runs\n\n"
+
+        if match_state["innings"] == 2 and match_state["batsman_score"] >= match_state["target"]:
+            # Batsman wins by reaching target
+            winner_id = batsman_id
+            loser_id = bowler_id
+            game_text += f"*{users[winner_id]['name']}* wins by completing the target! 🎉"
+            await finish_match(context, message_id, winner_id, loser_id, match_state["bet_amount"], final_game_text=game_text)
+            return # Exit to prevent further game loop
+
+        game_text += f"Next Move:\n*{batsman_name}* Continue your Bat!"
+        
+        await update_game_message(
+            context,
+            match_state["chat_id"],
+            match_state["message_id"],
+            game_text,
+            reply_markup=get_match_buttons()
+        )
+    
+    # Reset choices for next ball regardless of outcome (unless game finished)
+    match_state["p1_last_choice"] = None
+    match_state["p2_last_choice"] = None
+
+
+async def finish_match(context: ContextTypes.DEFAULT_TYPE, message_id: int, winner_id: int, loser_id: int, bet_amount: int, final_game_text: str = None):
+    """Handles updating scores, distributing bets, and ending a match."""
+    match_state = active_matches[message_id]
+    
+    winner_data = get_user_data(winner_id, users.get(winner_id, {}).get('name', 'Unknown'))
+    loser_data = get_user_data(loser_id, users.get(loser_id, {}).get('name', 'Unknown'))
+
+    winner_data["wins"] += 1
+    loser_data["losses"] += 1
+
+    if bet_amount > 0:
+        winner_data["coins"] += bet_amount * 2 # Winner gets double the bet
+        loser_data["coins"] -= bet_amount # Loser loses the bet
+        # Ensure loser's coins don't go below zero
+        if loser_data["coins"] < 0:
+            loser_data["coins"] = 0 # Cannot have negative coins
+
+        await context.bot.send_message(
+            chat_id=match_state["chat_id"],
+            text=f"💸 *Bet Result:*\n*{users[winner_id]['name']}* won {bet_amount*2}🪙!\n*{users[loser_id]['name']}* lost {bet_amount}🪙.",
+            parse_mode="Markdown"
+        )
+
+    save_data()
+    
+    # Update the game message to show final score and winner, then remove buttons
+    # Use the pre-formatted text if provided (e.g., from an out condition that ends the game)
+    # Otherwise, generate a generic final message.
+    if not final_game_text:
+        final_game_text = (
+            f"🏏 Match between *{match_state['p1_name']}* and *{match_state['p2_name']}*\n\n"
+            f"Final Score : {match_state['batsman_score']} Runs\n"
+            f"Target : {match_state['target'] if match_state['target'] > 0 else 'N/A'}\n\n"
+            f"🎉 *{users[winner_id]['name']}* wins the match!\n"
+            f"Good game, everyone!"
+        )
+    
+    await update_game_message(
+        context,
+        match_state["chat_id"],
+        message_id,
+        final_game_text,
+        reply_markup=None # Remove all buttons
+    )
+    
+    match_state["status"] = "game_over" # Mark match as finished
+
+
+async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Displays the leaderboard by coins or wins, with interactive buttons."""
+    message = update.message if update.message else update.callback_query.message
+    query_data = update.callback_query.data if update.callback_query else None
+
+    # Determine leaderboard type based on callback query data or default
+    if query_data == "lb_by_wins":
+        lb_type = "wins"
+    elif query_data == "lb_by_coins":
+        lb_type = "coins"
+    else: # Default or initial call
+        lb_type = "coins"
+    
+    sorted_users_list = []
+    if lb_type == "coins":
+        # Sort by coins in descending order
+        sorted_users_list = sorted(users.items(), key=lambda item: item[1]["coins"], reverse=True)
+    else: # "wins"
+        # Sort by wins in descending order
+        sorted_users_list = sorted(users.items(), key=lambda item: item[1]["wins"], reverse=True)
+
+    leaderboard_text = f"*{'💰 Richest Players' if lb_type == 'coins' else '🏆 Most Wins'} Leaderboard*\n\n"
+    if not sorted_users_list:
+        leaderboard_text += "No players registered yet!"
+    else:
+        for i, (user_id, data) in enumerate(sorted_users_list[:MAX_LEADERBOARD_ENTRIES]):
+            leaderboard_text += f"{i+1}. {data['name']} - {'🪙' + str(data['coins']) if lb_type == 'coins' else '🏆' + str(data['wins'])}\n"
+
+    # Create buttons to switch leaderboard view
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ By Coins" if lb_type == "wins" else "By Coins", callback_data="lb_by_coins"),
+         InlineKeyboardButton("By Wins" if lb_type == "coins" else "➡️ By Wins", callback_data="lb_by_wins")]
+    ])
+
+    if update.callback_query:
+        # If it's a callback, edit the existing message
+        await update_game_message(context, message.chat.id, message.message_id, leaderboard_text, reply_markup=keyboard)
+    else:
+        # If it's a command, send a new message
+        await message.reply_text(leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only command to add coins to a user."""
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("🚫 You are not authorized to use this command.")
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text("Usage: `/add <user_id> <amount>`")
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+        amount_to_add = int(context.args[1])
+        if amount_to_add <= 0:
+            await update.message.reply_text("Amount must be positive.")
+            return
+
+        if target_user_id not in users:
+            await update.message.reply_text(f"User with ID `{target_user_id}` not found in database. They must interact with the bot first (e.g., via /start or /register).")
+            return
+
+        users[target_user_id]["coins"] += amount_to_add
+        save_data()
+        await update.message.reply_text(
+            f"Successfully added {amount_to_add}🪙 to user `{target_user_id}` ({users[target_user_id]['name']}). "
+            f"New balance: {users[target_user_id]['coins']}🪙."
+        )
+    except ValueError:
+        await update.message.reply_text("Invalid user ID or amount. Please provide numbers.")
+    except Exception as e:
+        logger.error(f"Error in add_command: {e}")
+        await update.message.reply_text(f"An error occurred: {e}")
+
+
+async def main() -> None:
+    """Starts the bot."""
+    load_data() # Load user data when the bot starts
+    application = Application.builder().token(TOKEN).build()
+
+    # Register command handlers
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("register", register_command))
+    application.add_handler(CommandHandler("profile", profile_command))
+    application.add_handler(CommandHandler("daily", daily_command))
+    application.add_handler(CommandHandler("pm", pm_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("leaderboard", leaderboard_command))
+    application.add_handler(CommandHandler("add", add_command)) # Admin-only command
+
+    # Register callback query handlers for inline keyboard button presses
+    application.add_handler(CallbackQueryHandler(handle_join_match, pattern="^join_match$"))
+    application.add_handler(CallbackQueryHandler(handle_toss_choice, pattern="^toss_"))
+    application.add_handler(CallbackQueryHandler(handle_bat_bowl_choice, pattern="^choice_"))
+    application.add_handler(CallbackQueryHandler(handle_play_number, pattern="^play_"))
+    application.add_handler(CallbackQueryHandler(leaderboard_command, pattern="^lb_")) # For leaderboard buttons
+
+    # Run the bot
+    logger.info("CCG HandCricket Bot starting...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+    
