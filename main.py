@@ -5,6 +5,7 @@ import random
 import json
 from enum import Enum
 from threading import Lock
+from pathlib import Path
 
 from telegram import (
     Update,
@@ -21,13 +22,17 @@ from telegram.ext import (
 )
 
 # ===== CONFIG =====
-BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
+BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your actual token
 ADMIN_IDS = [123456789]  # Your Telegram ID
 COIN_EMOJI = "🪙"
 INITIAL_COINS = 4000
 DAILY_REWARD = 2000
 BET_MULTIPLIER = 2
+DATA_FILE = Path("data/chcdata.json")  # Using pathlib for cross-platform compatibility
 # ===== END CONFIG =====
+
+# Ensure data directory exists
+Path("data").mkdir(exist_ok=True)
 
 # Logging setup
 logging.basicConfig(
@@ -84,20 +89,31 @@ class Database:
 
     def save_data(self):
         with self.lock:
-            with open("chcdata.json", "w") as f:
-                json.dump({
-                    "users": self.users,
-                    "games": self.games
-                }, f)
+            try:
+                with open(DATA_FILE, "w") as f:
+                    json.dump({
+                        "users": self.users,
+                        "games": self.games
+                    }, f, indent=4)
+            except Exception as e:
+                logger.error(f"Error saving data: {e}")
 
     def load_data(self):
         try:
-            with open("chcdata.json", "r") as f:
-                data = json.load(f)
-                self.users = data.get("users", {})
-                self.games = data.get("games", {})
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.warning("Failed to load data, starting fresh")
+            if DATA_FILE.exists():
+                with open(DATA_FILE, "r") as f:
+                    data = json.load(f)
+                    self.users = data.get("users", {})
+                    self.games = data.get("games", {})
+                    logger.info("Data loaded successfully")
+            else:
+                logger.info("No data file found - starting fresh")
+        except json.JSONDecodeError:
+            logger.warning("Corrupted data file - starting fresh")
+            self.users = {}
+            self.games = {}
+        except Exception as e:
+            logger.error(f"Error loading data: {e} - starting fresh")
             self.users = {}
             self.games = {}
 
@@ -265,7 +281,6 @@ async def handle_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game = db.games[game_id]
     user = update.effective_user
     
-    # Prevent creator from joining their own game
     if user.id == game["players"][0]:
         await query.answer("❌ You can't join your own game!", show_alert=True)
         return
@@ -284,14 +299,12 @@ async def handle_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p1 = db.users[game["players"][0]]["name"]
     p2 = db.users[user.id]["name"]
     
-    # Edit original message to show who joined
     await query.edit_message_text(
         f"⚡ {p1} vs {p2}\n"
         f"Bet: {game['bet']}{COIN_EMOJI if game['bet'] > 0 else ''}\n\n"
         f"Waiting for toss decision..."
     )
     
-    # Send toss choice to initiator
     await context.bot.send_message(
         chat_id=game["players"][0],
         text=f"🎉 {p2} joined your match!\n\nChoose:",
@@ -315,13 +328,11 @@ async def handle_toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("❌ Invalid action")
         return
     
-    # Determine toss winner
     toss_result = random.choice(["heads", "tails"])
     winner_idx = 0 if choice == toss_result else 1
     game["toss_winner"] = game["players"][winner_idx]
     game["state"] = GameState.PLAYING
     
-    # Ask winner to choose bat/bowl
     winner_name = db.users[game["toss_winner"]]["name"]
     await context.bot.send_message(
         chat_id=game["toss_winner"],
@@ -332,7 +343,6 @@ async def handle_toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
     
-    # Notify other player
     other_id = game["players"][1] if winner_idx == 0 else game["players"][0]
     await context.bot.send_message(
         chat_id=other_id,
@@ -353,7 +363,6 @@ async def handle_bat_bowl(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("❌ Invalid action")
         return
     
-    # Set roles
     if choice == "bat":
         game["batsman"] = game["toss_winner"]
         game["bowler"] = game["players"][1] if game["players"][0] == game["toss_winner"] else game["players"][0]
@@ -361,7 +370,6 @@ async def handle_bat_bowl(update: Update, context: ContextTypes.DEFAULT_TYPE):
         game["bowler"] = game["toss_winner"]
         game["batsman"] = game["players"][1] if game["players"][0] == game["toss_winner"] else game["players"][0]
     
-    # Start game
     batsman_name = db.users[game["batsman"]]["name"]
     bowler_name = db.users[game["bowler"]]["name"]
     
@@ -395,11 +403,9 @@ async def handle_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game = db.games[game_id]
     player_id = update.effective_user.id
     
-    # Store choice
     if f"choice_{player_id}" not in game:
         game[f"choice_{player_id}"] = num
     
-    # Check if both have chosen
     if all(f"choice_{p_id}" in game for p_id in game["players"]):
         await resolve_round(game_id, context)
 
@@ -412,7 +418,6 @@ async def resolve_round(game_id: str, context: ContextTypes.DEFAULT_TYPE):
     bowler_name = db.users[game["bowler"]]["name"]
     
     if batsman_choice == bowler_choice:
-        # Out
         game["state"] = GameState.COMPLETED
         game["completed_time"] = datetime.now().isoformat()
         winner = game["bowler"]
@@ -435,11 +440,9 @@ async def resolve_round(game_id: str, context: ContextTypes.DEFAULT_TYPE):
                      f"💰 Reward: {game['bet'] * BET_MULTIPLIER if game['bet'] > 0 else 'None'}"
             )
     else:
-        # Continue
         game["score"] += batsman_choice
         game["balls"] += 1
         
-        # Clear choices
         del game[f"choice_{game['batsman']}"]
         del game[f"choice_{game['bowler']}"]
         
@@ -505,8 +508,13 @@ async def cleanup_games(context: ContextTypes.DEFAULT_TYPE):
         db.save_data()
         logger.info(f"Cleaned up {len(expired_games)} games")
 
+async def periodic_save(context: ContextTypes.DEFAULT_TYPE):
+    db.save_data()
+    logger.info("Periodic data save completed")
+
 # ===== MAIN =====
 def main():
+    # Create Application with JobQueue support
     app = Application.builder().token(BOT_TOKEN).build()
     
     # Commands
@@ -526,10 +534,20 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_number, pattern=r"^num_"))
     app.add_handler(CallbackQueryHandler(handle_leaderboard, pattern=r"^lb_"))
     
-    # Cleanup job
-    job_queue = app.job_queue
-    job_queue.run_repeating(cleanup_games, interval=3600, first=10)  # Every hour
+    # Setup job queue if available
+    try:
+        job_queue = app.job_queue
+        if job_queue:
+            job_queue.run_repeating(cleanup_games, interval=3600, first=10)
+            job_queue.run_repeating(periodic_save, interval=300, first=60)
+            logger.info("JobQueue initialized successfully")
+        else:
+            logger.warning("JobQueue not available - periodic tasks disabled")
+    except Exception as e:
+        logger.error(f"JobQueue setup failed: {e}")
     
+    # Start bot
+    logger.info("Bot starting...")
     app.run_polling()
 
 if __name__ == "__main__":
