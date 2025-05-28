@@ -12,7 +12,7 @@ from telegram.ext import Application, CommandHandler, CallbackContext, MessageHa
 
 # --- Configuration ---
 BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo" # Replace with your actual bot token
-ADMIN_IDS = [YOUR_ADMIN_TELEGRAM_USER_ID] # Replace with your Telegram User ID(s) as integers, e.g., [123456789]
+ADMIN_IDS = [257839899] # Replace with your Telegram User ID(s) as integers, e.g., [123456789]
 DB_NAME = "handcricket_bot.db"
 DAILY_REWARD = 2000
 REGISTER_REWARD = 4000
