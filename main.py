@@ -441,7 +441,7 @@ async def handle_play_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 match_state["chat_id"],
                 match_state["message_id"],
                 f"🏏 Batter : *{batsman_name}*\n⚾ Bowler : *{bowler_name}*\n\n"
-                f"*{batsman_name}* chosen the number, now *{bowler_name}*'s turn.",
+                f"*{batsman_name}* chosen the number, now *{bowler_name}*'s turn.", # Corrected line
                 reply_markup=get_match_buttons()
             )
         elif player_id == bowler_id: # Bowler played, waiting for batsman
@@ -450,4 +450,4 @@ async def handle_play_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 match_state["chat_id"],
                 match_state["message_id"],
                 f"🏏 Batter : *{batsman_name}*\n⚾ Bowler : *{bowler_name}*\n\n"
-                f"*{bowler_name}* chosen the
+                f"*{bowler_
