@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 from datetime import datetime, timedelta
 import random
 import json
@@ -28,7 +28,7 @@ COIN_EMOJI = "🪙"
 INITIAL_COINS = 4000
 DAILY_REWARD = 2000
 BET_MULTIPLIER = 2
-DATA_FILE = Path("data/chcdata.json")  # Using pathlib for cross-platform compatibility
+DATA_FILE = Path("data/chcdata.json")
 # ===== END CONFIG =====
 
 # Ensure data directory exists
@@ -121,6 +121,7 @@ db = Database()
 
 # ===== COMMAND HANDLERS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send welcome message"""
     await update.message.reply_text(
         "🏏 *Welcome to CCG HandCricket!*\n"
         "Type /help for commands",
@@ -128,6 +129,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Register new user"""
     user = update.effective_user
     if db.register_user(user.id, user.first_name):
         await update.message.reply_text(
@@ -137,6 +139,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Already registered!")
 
 async def pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start a new match"""
     user = update.effective_user
     
     if user.id not in db.users:
@@ -169,6 +172,7 @@ async def pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show user profile"""
     user = update.effective_user
     if user.id not in db.users:
         await update.message.reply_text("⚠️ Register first with /register")
@@ -186,6 +190,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Claim daily reward"""
     user = update.effective_user
     if user.id not in db.users:
         await update.message.reply_text("⚠️ Register first with /register")
@@ -209,8 +214,8 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show leaderboard"""
     coins_lb = sorted(db.users.values(), key=lambda x: x["coins"], reverse=True)[:10]
-    wins_lb = sorted(db.users.values(), key=lambda x: x["wins"], reverse=True)[:10]
     
     text = "🏆 *Top 10 by Coins*\n\n"
     for i, user in enumerate(coins_lb, 1):
@@ -228,6 +233,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to add coins"""
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Admin only!")
         return
@@ -254,6 +260,7 @@ async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show help message"""
     await update.message.reply_text(
         "📜 *CCG HandCricket Commands*\n\n"
         "🏏 /start - Welcome message\n"
@@ -270,6 +277,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== GAME HANDLERS =====
 async def handle_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle join game callback"""
     query = update.callback_query
     await query.answer()
     
@@ -315,6 +323,7 @@ async def handle_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle toss selection"""
     query = update.callback_query
     await query.answer()
     
@@ -350,6 +359,7 @@ async def handle_toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_bat_bowl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle bat/bowl selection"""
     query = update.callback_query
     await query.answer()
     
@@ -386,6 +396,7 @@ async def handle_bat_bowl(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def handle_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle number selection during gameplay"""
     query = update.callback_query
     await query.answer()
     
@@ -410,6 +421,7 @@ async def handle_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await resolve_round(game_id, context)
 
 async def resolve_round(game_id: str, context: ContextTypes.DEFAULT_TYPE):
+    """Resolve a round of gameplay"""
     game = db.games[game_id]
     batsman_choice = game[f"choice_{game['batsman']}"]
     bowler_choice = game[f"choice_{game['bowler']}"]
@@ -461,6 +473,7 @@ async def resolve_round(game_id: str, context: ContextTypes.DEFAULT_TYPE):
             )
 
 async def handle_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle leaderboard callback"""
     query = update.callback_query
     await query.answer()
     
@@ -489,6 +502,7 @@ async def handle_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ===== CLEANUP FUNCTIONS =====
 async def cleanup_games(context: ContextTypes.DEFAULT_TYPE):
+    """Clean up old games"""
     now = datetime.now()
     expired_games = []
     
@@ -509,46 +523,45 @@ async def cleanup_games(context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Cleaned up {len(expired_games)} games")
 
 async def periodic_save(context: ContextTypes.DEFAULT_TYPE):
+    """Periodically save data"""
     db.save_data()
     logger.info("Periodic data save completed")
 
 # ===== MAIN =====
 def main():
-    # Create Application with JobQueue support
-    app = Application.builder().token(BOT_TOKEN).build()
+    """Start the bot"""
+    # Create Application
+    application = Application.builder().token(BOT_TOKEN).build()
     
-    # Commands
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("register", register))
-    app.add_handler(CommandHandler("pm", pm))
-    app.add_handler(CommandHandler("profile", profile))
-    app.add_handler(CommandHandler("daily", daily))
-    app.add_handler(CommandHandler("leaderboard", leaderboard))
-    app.add_handler(CommandHandler("add", add_coins))
-    app.add_handler(CommandHandler("help", help_command))
+    # Add command handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("register", register))
+    application.add_handler(CommandHandler("pm", pm))
+    application.add_handler(CommandHandler("profile", profile))
+    application.add_handler(CommandHandler("daily", daily))
+    application.add_handler(CommandHandler("leaderboard", leaderboard))
+    application.add_handler(CommandHandler("add", add_coins))
+    application.add_handler(CommandHandler("help", help_command))
     
-    # Callbacks
-    app.add_handler(CallbackQueryHandler(handle_join, pattern=r"^join_"))
-    app.add_handler(CallbackQueryHandler(handle_toss, pattern=r"^(heads|tails)_"))
-    app.add_handler(CallbackQueryHandler(handle_bat_bowl, pattern=r"^(bat|bowl)_"))
-    app.add_handler(CallbackQueryHandler(handle_number, pattern=r"^num_"))
-    app.add_handler(CallbackQueryHandler(handle_leaderboard, pattern=r"^lb_"))
+    # Add callback handlers
+    application.add_handler(CallbackQueryHandler(handle_join, pattern=r"^join_"))
+    application.add_handler(CallbackQueryHandler(handle_toss, pattern=r"^(heads|tails)_"))
+    application.add_handler(CallbackQueryHandler(handle_bat_bowl, pattern=r"^(bat|bowl)_"))
+    application.add_handler(CallbackQueryHandler(handle_number, pattern=r"^num_"))
+    application.add_handler(CallbackQueryHandler(handle_leaderboard, pattern=r"^lb_"))
     
     # Setup job queue if available
     try:
-        job_queue = app.job_queue
-        if job_queue:
-            job_queue.run_repeating(cleanup_games, interval=3600, first=10)
-            job_queue.run_repeating(periodic_save, interval=300, first=60)
+        if application.job_queue:
+            application.job_queue.run_repeating(cleanup_games, interval=3600, first=10)
+            application.job_queue.run_repeating(periodic_save, interval=300, first=60)
             logger.info("JobQueue initialized successfully")
-        else:
-            logger.warning("JobQueue not available - periodic tasks disabled")
     except Exception as e:
         logger.error(f"JobQueue setup failed: {e}")
     
-    # Start bot
+    # Start the Bot
     logger.info("Bot starting...")
-    app.run_polling()
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
