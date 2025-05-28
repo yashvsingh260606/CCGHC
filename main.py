@@ -811,6 +811,7 @@ def leaderboard_button(update: Update, context: CallbackContext):
     
     query.answer()
 # Admin commands
+# Admin commands
 def add_coins(update: Update, context: CallbackContext):
     user = update.effective_user
     if user.id not in ADMIN_IDS:
@@ -870,15 +871,13 @@ def setup_handlers(dispatcher):
     dispatcher.add_handler(CommandHandler("profile", profile))
     dispatcher.add_handler(CommandHandler("daily", daily))
     dispatcher.add_handler(CommandHandler("help", help_command))
-    dispatcher.add_handler(CommandHandler("leaderboard", 
-        lambda u, c: show_leaderboard(u, c, 'coins')))
+    dispatcher.add_handler(CommandHandler("leaderboard", lambda u, c: show_leaderboard(u, c, 'coins')))
     
     # Match commands
-    dispatcher.add_handler(CommandHandler("pm", 
-        lambda u, c: start_match(u, c, bet_amount=0)))
+    dispatcher.add_handler(CommandHandler("pm", lambda u, c: start_match(u, c, bet_amount=0)))
     dispatcher.add_handler(MessageHandler(
         Filters.regex(r'^/pm\s+\d+$'),
-        lambda u, c: start_match(u, c, bet_amount=int(u.message.text.split()[1])))
+        lambda u, c: start_match(u, c, bet_amount=int(u.message.text.split()[1]))))
     
     # Admin commands
     dispatcher.add_handler(CommandHandler("add", add_coins))
@@ -886,18 +885,18 @@ def setup_handlers(dispatcher):
     # Callback handlers
     dispatcher.add_handler(CallbackQueryHandler(
         lambda u, c: join_match(u, c, int(u.callback_query.data.split('_')[1])),
-        pattern=r'^join_\d+$'))
+        pattern=r'^join_\d+$')
     dispatcher.add_handler(CallbackQueryHandler(
         lambda u, c: process_toss(u, c, int(u.callback_query.data.split('_')[2]), u.callback_query.data.split('_')[1])),
-        pattern=r'^toss_(heads|tails)_\d+$'))
+        pattern=r'^toss_(heads|tails)_\d+$')
     dispatcher.add_handler(CallbackQueryHandler(
         lambda u, c: choose_bat_or_bowl(u, c, int(u.callback_query.data.split('_')[2]), u.callback_query.data.split('_')[1])),
-        pattern=r'^choose_(bat|bowl)_\d+$'))
+        pattern=r'^choose_(bat|bowl)_\d+$')
     dispatcher.add_handler(CallbackQueryHandler(
         lambda u, c: process_number_selection(u, c, int(u.callback_query.data.split('_')[2]), int(u.callback_query.data.split('_')[1])),
-        pattern=r'^num_[1-6]_\d+$'))
-    dispatcher.add_handler(CallbackQueryHandler(leaderboard_button,
-        pattern=r'^leaderboard_(coins|wins)$'))
+        pattern=r'^num_[1-6]_\d+$')
+    dispatcher.add_handler(CallbackQueryHandler(leaderboard_button),
+        pattern=r'^leaderboard_(coins|wins)$')
 
 # Main function
 def main():
