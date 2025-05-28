@@ -2,6 +2,7 @@ import logging
 import sqlite3
 import random
 import uuid
+import os
 from datetime import datetime, timedelta
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
@@ -15,8 +16,8 @@ from telegram.ext import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = '8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo'  # <-- Replace with your bot token
-ADMINS = [123456789]  # <-- Replace with your Telegram user ID
+BOT_TOKEN = os.environ.get("8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo")  # Set this in Railway Variables!
+ADMINS = [123456789]  # Replace with your Telegram user ID
 COIN_EMOJI = "🪙"
 DAILY_REWARD = 2000
 REGISTER_BONUS = 4000
@@ -32,6 +33,7 @@ NUMBERS = [[1, 2, 3], [4, 5, 6]]
     PM_BOWL_NUMBER,
 ) = range(5)
 
+# --- SQLite DB ---
 conn = sqlite3.connect('ccg_handcricket.db', check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -548,7 +550,7 @@ def main():
         },
         fallbacks=[CommandHandler('start', start)],
         allow_reentry=True,
-        per_message=True,  # Ensures callback queries are tracked per message
+        # per_message=True,  # DO NOT USE THIS LINE!
     )
     application.add_handler(conv_handler)
 
