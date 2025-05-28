@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import random
 import json
 from enum import Enum
+from threading import Lock
 
 from telegram import (
     Update,
@@ -45,49 +46,60 @@ class GameState(Enum):
 # Database class
 class Database:
     def __init__(self):
+        self.lock = Lock()
         self.users = {}
         self.games = {}
         self.load_data()
 
     def register_user(self, user_id: int, name: str) -> bool:
-        if user_id not in self.users:
-            self.users[user_id] = {
-                "name": name,
-                "coins": INITIAL_COINS,
-                "wins": 0,
-                "losses": 0,
-                "last_daily": None
-            }
-            self.save_data()
-            return True
+        with self.lock:
+            if user_id not in self.users:
+                self.users[user_id] = {
+                    "name": name,
+                    "coins": INITIAL_COINS,
+                    "wins": 0,
+                    "losses": 0,
+                    "last_daily": None
+                }
+                self.save_data()
+                return True
         return False
 
     def create_game(self, initiator_id: int, bet: int = 0) -> str:
-        game_id = f"game_{random.randint(1000,9999)}"
-        self.games[game_id] = {
-            "state": GameState.WAITING,
-            "players": [initiator_id],
-            "bet": bet,
-            "toss_winner": None,
-            "batsman": None,
-            "bowler": None,
-            "score": 0,
-            "balls": 0
-        }
+        with self.lock:
+            game_id = f"game_{random.randint(1000,9999)}"
+            self.games[game_id] = {
+                "state": GameState.WAITING,
+                "players": [initiator_id],
+                "bet": bet,
+                "toss_winner": None,
+                "batsman": None,
+                "bowler": None,
+                "score": 0,
+                "balls": 0,
+                "created_time": datetime.now().isoformat()
+            }
+            self.save_data()
         return game_id
 
     def save_data(self):
-        with open("data.json", "w") as f:
-            json.dump({"users": self.users, "games": self.games}, f)
+        with self.lock:
+            with open("chcdata.json", "w") as f:
+                json.dump({
+                    "users": self.users,
+                    "games": self.games
+                }, f)
 
     def load_data(self):
         try:
-            with open("data.json", "r") as f:
+            with open("chcdata.json", "r") as f:
                 data = json.load(f)
                 self.users = data.get("users", {})
                 self.games = data.get("games", {})
-        except FileNotFoundError:
-            pass
+        except (FileNotFoundError, json.JSONDecodeError):
+            logger.warning("Failed to load data, starting fresh")
+            self.users = {}
+            self.games = {}
 
 db = Database()
 
@@ -110,10 +122,18 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    bet = int(context.args[0]) if context.args else 0
     
     if user.id not in db.users:
         await update.message.reply_text("⚠️ Register first with /register")
+        return
+    
+    try:
+        bet = int(context.args[0]) if context.args else 0
+        if bet < 0:
+            await update.message.reply_text("❌ Bet amount cannot be negative!")
+            return
+    except ValueError:
+        await update.message.reply_text("❌ Please enter a valid number for bet!")
         return
     
     if bet > 0 and db.users[user.id]["coins"] < bet:
@@ -121,6 +141,7 @@ async def pm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     game_id = db.create_game(user.id, bet)
+    
     await update.message.reply_text(
         f"🏏 *Match started!*\n"
         f"Bet: {bet}{COIN_EMOJI if bet > 0 else ''}\n\n"
@@ -242,13 +263,19 @@ async def handle_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     game = db.games[game_id]
-    if len(game["players"]) >= 2:
-        await query.answer("❌ Game full")
+    user = update.effective_user
+    
+    # Prevent creator from joining their own game
+    if user.id == game["players"][0]:
+        await query.answer("❌ You can't join your own game!", show_alert=True)
         return
     
-    user = update.effective_user
+    if len(game["players"]) >= 2:
+        await query.answer("❌ Game full", show_alert=True)
+        return
+    
     if user.id not in db.users:
-        await query.answer("⚠️ Register first with /register")
+        await query.answer("⚠️ Register first with /register", show_alert=True)
         return
     
     game["players"].append(user.id)
@@ -257,6 +284,14 @@ async def handle_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p1 = db.users[game["players"][0]]["name"]
     p2 = db.users[user.id]["name"]
     
+    # Edit original message to show who joined
+    await query.edit_message_text(
+        f"⚡ {p1} vs {p2}\n"
+        f"Bet: {game['bet']}{COIN_EMOJI if game['bet'] > 0 else ''}\n\n"
+        f"Waiting for toss decision..."
+    )
+    
+    # Send toss choice to initiator
     await context.bot.send_message(
         chat_id=game["players"][0],
         text=f"🎉 {p2} joined your match!\n\nChoose:",
@@ -265,8 +300,6 @@ async def handle_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Tails", callback_data=f"tails_{game_id}")]
         ])
     )
-    
-    await query.edit_message_text(f"⚡ {p1} vs {p2}\nWaiting for toss...")
 
 async def handle_toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -355,6 +388,10 @@ async def handle_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Game expired")
         return
     
+    if num < 1 or num > 6:
+        await query.answer("❌ Please choose between 1-6")
+        return
+    
     game = db.games[game_id]
     player_id = update.effective_user.id
     
@@ -377,6 +414,7 @@ async def resolve_round(game_id: str, context: ContextTypes.DEFAULT_TYPE):
     if batsman_choice == bowler_choice:
         # Out
         game["state"] = GameState.COMPLETED
+        game["completed_time"] = datetime.now().isoformat()
         winner = game["bowler"]
         loser = game["batsman"]
         
@@ -391,8 +429,8 @@ async def resolve_round(game_id: str, context: ContextTypes.DEFAULT_TYPE):
         for player_id in game["players"]:
             await context.bot.send_message(
                 chat_id=player_id,
-                text=f"🏏 {batsman_name} bat {batsman_choice}\n"
-                     f"⚾ {bowler_name} bowl {bowler_choice}\n\n"
+                text=f"🏏 {batsman_name} chose {batsman_choice}\n"
+                     f"⚾ {bowler_name} chose {bowler_choice}\n\n"
                      f"🎯 WICKET! {bowler_name} wins!\n"
                      f"💰 Reward: {game['bet'] * BET_MULTIPLIER if game['bet'] > 0 else 'None'}"
             )
@@ -408,8 +446,8 @@ async def resolve_round(game_id: str, context: ContextTypes.DEFAULT_TYPE):
         for player_id in game["players"]:
             await context.bot.send_message(
                 chat_id=player_id,
-                text=f"🏏 {batsman_name} bat {batsman_choice}\n"
-                     f"⚾ {bowler_name} bowl {bowler_choice}\n\n"
+                text=f"🏏 {batsman_name} chose {batsman_choice}\n"
+                     f"⚾ {bowler_name} chose {bowler_choice}\n\n"
                      f"📊 Score: {game['score']}\n"
                      f"🔢 Balls: {game['balls']}\n\n"
                      f"Next round!",
@@ -446,6 +484,27 @@ async def handle_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode="Markdown"
     )
 
+# ===== CLEANUP FUNCTIONS =====
+async def cleanup_games(context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now()
+    expired_games = []
+    
+    for game_id, game in db.games.items():
+        if game["state"] == GameState.COMPLETED:
+            if "completed_time" in game:
+                if (now - datetime.fromisoformat(game["completed_time"])) > timedelta(hours=1):
+                    expired_games.append(game_id)
+        elif game["state"] == GameState.WAITING:
+            if (now - datetime.fromisoformat(game["created_time"])) > timedelta(minutes=5):
+                expired_games.append(game_id)
+    
+    for game_id in expired_games:
+        del db.games[game_id]
+    
+    if expired_games:
+        db.save_data()
+        logger.info(f"Cleaned up {len(expired_games)} games")
+
 # ===== MAIN =====
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -466,6 +525,10 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_bat_bowl, pattern=r"^(bat|bowl)_"))
     app.add_handler(CallbackQueryHandler(handle_number, pattern=r"^num_"))
     app.add_handler(CallbackQueryHandler(handle_leaderboard, pattern=r"^lb_"))
+    
+    # Cleanup job
+    job_queue = app.job_queue
+    job_queue.run_repeating(cleanup_games, interval=3600, first=10)  # Every hour
     
     app.run_polling()
 
