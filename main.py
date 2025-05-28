@@ -58,9 +58,9 @@ def init_db():
             initiator_score INTEGER,
             opponent_score INTEGER,
             bet_amount INTEGER,
-            current_turn TEXT, -- 'initiator_batting', 'opponent_batting', 'initiator_bowling', 'opponent_bowling'
+            current_turn TEXT, -- 'initiator_batting', 'opponent_batting'
             target INTEGER,
-            status TEXT, -- 'waiting_for_join', 'in_progress', 'completed', 'cancelled'
+            status TEXT, -- 'waiting_for_join', 'toss_pending', 'choice_pending', 'in_progress', 'completed', 'cancelled'
             message_id INTEGER,
             chat_id INTEGER
         )
@@ -131,127 +131,138 @@ def delete_game_data(game_id: str):
     conn.commit()
     conn.close()
     logger.info(f"Game {game_id} deleted from DB.")
-# --- Utility Functions ---
+
+# --- Keyboard Functions ---
 
 def get_game_keyboard(game_id: str) -> InlineKeyboardMarkup:
+    """Returns the keyboard for joining or cancelling a game."""
     keyboard = [
-        [
-            InlineKeyboardButton("Join Game", callback_data=f"join_game_{game_id}"),
-            InlineKeyboardButton("Cancel Game", callback_data=f"cancel_game_{game_id}")
-        ]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def get_play_keyboard(game_id: str) -> InlineKeyboardMarkup:
-    keyboard = [
-        [
-            InlineKeyboardButton("1", callback_data=f"play_game_{game_id}_1"),
-            InlineKeyboardButton("2", callback_data=f"play_game_{game_id}_2"),
-            InlineKeyboardButton("3", callback_data=f"play_game_{game_id}_3")
-        ],
-        [
-            InlineKeyboardButton("4", callback_data=f"play_game_{game_id}_4"),
-            InlineKeyboardButton("5", callback_data=f"play_game_{game_id}_5"),
-            InlineKeyboardButton("6", callback_data=f"play_game_{game_id}_6")
-        ]
+        [InlineKeyboardButton("🤝 Join Game", callback_data=f"join_game_{game_id}")],
+        [InlineKeyboardButton("❌ Cancel Game", callback_data=f"cancel_game_{game_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_toss_keyboard(game_id: str) -> InlineKeyboardMarkup:
+    """Returns the keyboard for toss (Heads/Tails)."""
     keyboard = [
         [
-            InlineKeyboardButton("Odd", callback_data=f"toss_{game_id}_odd"),
-            InlineKeyboardButton("Even", callback_data=f"toss_{game_id}_even")
+            InlineKeyboardButton("Heads", callback_data=f"toss_{game_id}_heads"),
+            InlineKeyboardButton("Tails", callback_data=f"toss_{game_id}_tails")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_bat_bowl_choice_keyboard(game_id: str) -> InlineKeyboardMarkup:
+    """Returns the keyboard for choosing bat or bowl."""
     keyboard = [
         [
-            InlineKeyboardButton("Batting", callback_data=f"choice_{game_id}_bat"),
-            InlineKeyboardButton("Bowling", callback_data=f"choice_{game_id}_bowl")
+            InlineKeyboardButton("🏏 Bat", callback_data=f"choice_{game_id}_bat"),
+            InlineKeyboardButton("⚾ Bowl", callback_data=f"choice_{game_id}_bowl")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def get_play_keyboard(game_id: str) -> InlineKeyboardMarkup:
+    """Returns the keyboard for playing runs."""
+    keyboard = [
+        [InlineKeyboardButton("1", callback_data=f"play_game_{game_id}_1"),
+         InlineKeyboardButton("2", callback_data=f"play_game_{game_id}_2"),
+         InlineKeyboardButton("3", callback_data=f"play_game_{game_id}_3")],
+        [InlineKeyboardButton("4", callback_data=f"play_game_{game_id}_4"),
+         InlineKeyboardButton("5", callback_data=f"play_game_{game_id}_5"),
+         InlineKeyboardButton("6", callback_data=f"play_game_{game_id}_6")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# --- Helper Functions ---
+
 def get_game_summary(game_data: Dict[str, Any]) -> str:
-    summary = f"🏏 Hand Cricket Game ID: `{game_data['game_id']}`\n" \
-              f"💰 Bet Amount: {game_data['bet_amount']}🪙\n" \
-              f"🌟 Status: {game_data['status'].replace('_', ' ').title()}\n" \
-              f"**{game_data['initiator_username']}** (Initiator): {game_data['initiator_score']}\n" \
-              f"**{game_data['opponent_username']}** (Opponent): {game_data['opponent_score']}\n"
+    """Generates a summary of the game state."""
+    initiator_name = game_data['initiator_username']
+    opponent_name = game_data['opponent_username'] if game_data['opponent_username'] else "Waiting for opponent..."
+    bet_info = f"Bet: {game_data['bet_amount']}🪙" if game_data['bet_amount'] > 0 else "No Bet Game"
+
+    status_text = {
+        'waiting_for_join': f"Game initiated by {initiator_name}. {bet_info}\nStatus: Waiting for an opponent to join.",
+        'toss_pending': f"Game between {initiator_name} and {opponent_name}. {bet_info}\nStatus: Toss pending. {initiator_name}, choose Heads or Tails for the toss.",
+        'choice_pending': f"Game between {initiator_name} and {opponent_name}. {bet_info}\nStatus: Toss won by {game_data['current_turn']}. {game_data['current_turn']}, choose to Bat or Bowl.",
+        'in_progress': (f"Game between {initiator_name} ({game_data['initiator_score']}) "
+                        f"and {opponent_name} ({game_data['opponent_score']}). {bet_info}\n"
+                        f"Current Turn: "
+                        f"{initiator_name if game_data['current_turn'] == 'initiator_batting' else opponent_name} is {'batting' if 'batting' in game_data['current_turn'] else 'bowling'}.\n"
+                        f"{f'Target: {game_data['target']}' if game_data['target'] > 0 else 'First Innings'}"
+                       ),
+        'completed': (f"Game between {initiator_name} ({game_data['initiator_score']}) "
+                      f"and {opponent_name} ({game_data['opponent_score']}). {bet_info}\n"
+                      "Status: Game Over!\n"
+                      f"{'Result: ' + determine_game_result(game_data)}"
+                     ),
+        'cancelled': f"Game initiated by {initiator_name} ({bet_info}) has been cancelled."
+    }
+    return status_text.get(game_data['status'], "Unknown game status.")
+
+def determine_game_result(game_data: Dict[str, Any]) -> str:
+    """Determines the winner of a completed game."""
+    initiator_score = game_data['initiator_score']
+    opponent_score = game_data['opponent_score']
+    
+    if game_data['target'] > 0: # Second innings
+        if game_data['current_turn'] == 'opponent_batting': # Opponent was batting in second innings
+            if opponent_score >= game_data['target']:
+                return f"{game_data['opponent_username']} wins by chasing the target!"
+            else:
+                return f"{game_data['initiator_username']} wins by defending the target!"
+        elif game_data['current_turn'] == 'initiator_batting': # Initiator was batting in second innings
+            if initiator_score >= game_data['target']:
+                return f"{game_data['initiator_username']} wins by chasing the target!"
+            else:
+                return f"{game_data['opponent_username']} wins by defending the target!"
+    else: # First innings completed, one player is out, other wins by higher score or tie
+        if initiator_score > opponent_score:
+            return f"{game_data['initiator_username']} wins!"
+        elif opponent_score > initiator_score:
+            return f"{game_data['opponent_username']} wins!"
+    return "It's a tie!" # Should only happen if scores are equal after an out
+
+async def update_game_message(context: ContextTypes.DEFAULT_TYPE, game_data: Dict[str, Any], extra_text: Optional[str] = None):
+    """Edits the game message with the latest state, optionally adding extra text."""
+    summary = get_game_summary(game_data)
+    if extra_text:
+        summary += f"\n\n{extra_text}"
+    
+    reply_markup = None
 
     if game_data['status'] == 'waiting_for_join':
-        summary += "\nWaiting for an opponent to join..."
+        reply_markup = get_game_keyboard(game_data['game_id'])
     elif game_data['status'] == 'toss_pending':
-        summary += "\n❗ Toss pending. Initiator is choosing Odd/Even."
+        reply_markup = get_toss_keyboard(game_data['game_id'])
     elif game_data['status'] == 'choice_pending':
-        summary += f"\n❗ Toss won by {game_data['current_turn'].replace('_batting', '').replace('_bowling', '').replace('_', ' ').title()}. Choosing Bat/Bowl."
+        reply_markup = get_bat_bowl_choice_keyboard(game_data['game_id'])
     elif game_data['status'] == 'in_progress':
-        if game_data['current_turn'] == 'initiator_batting':
-            summary += f"\n**{game_data['initiator_username']}** is batting. Target: {game_data['target']}\n"
-        elif game_data['current_turn'] == 'opponent_batting':
-            summary += f"\n**{game_data['opponent_username']}** is batting. Target: {game_data['target']}\n"
-        elif game_data['current_turn'] == 'initiator_bowling':
-            summary += f"\n**{game_data['initiator_username']}** is bowling. Target: {game_data['target']}\n"
-        elif game_data['current_turn'] == 'opponent_bowling':
-            summary += f"\n**{game_data['opponent_username']}** is bowling. Target: {game_data['target']}\n"
-        summary += "\nChoose your run (1-6)!"
-    elif game_data['status'] == 'completed':
-        if game_data['initiator_score'] > game_data['opponent_score']:
-            winner = game_data['initiator_username']
-            loser = game_data['opponent_username']
-        elif game_data['opponent_score'] > game_data['initiator_score']:
-            winner = game_data['opponent_username']
-            loser = game_data['initiator_username']
-        else:
-            winner = "It's a Tie!"
-            loser = "" # No loser in a tie
-        summary += f"\n\n🎉 **Game Over!** 🎉\n"
-        if winner == "It's a Tie!":
-            summary += f"It's a draw! Both players get their bet back."
-        else:
-            summary += f"The winner is **{winner}**! {winner} won {game_data['bet_amount']}🪙 from {loser}."
-    elif game_data['status'] == 'cancelled':
-        summary += "\n❌ Game was cancelled."
+        reply_markup = get_play_keyboard(game_data['game_id'])
+    # No reply_markup for 'completed' or 'cancelled'
 
-    return summary
-
-async def update_game_message(context: ContextTypes.DEFAULT_TYPE, game_data: Dict[str, Any]):
     try:
-        if game_data['message_id'] and game_data['chat_id']:
-            summary = get_game_summary(game_data)
-            reply_markup = None
-
-            if game_data['status'] == 'waiting_for_join':
-                reply_markup = get_game_keyboard(game_data['game_id'])
-            elif game_data['status'] == 'toss_pending' and game_data['initiator_id']:
-                # Ensure the toss keyboard only appears for the initiator's message
-                # This might need refinement based on how the bot sends toss messages
-                # For now, it will attach to the main game message.
-                reply_markup = get_toss_keyboard(game_data['game_id'])
-            elif game_data['status'] == 'choice_pending':
-                reply_markup = get_bat_bowl_choice_keyboard(game_data['game_id'])
-            elif game_data['status'] == 'in_progress':
-                reply_markup = get_play_keyboard(game_data['game_id'])
-
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=game_data['chat_id'],
-                    message_id=game_data['message_id'],
-                    text=summary,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
-            except Exception as e:
-                logger.warning(f"Failed to edit message {game_data['message_id']} in chat {game_data['chat_id']}: {e}")
-                # This could happen if the message was deleted or is too old
-                # For now, we'll let it fail, but a more robust bot might send a new message
-        else:
-            logger.warning(f"Attempted to update game message without message_id or chat_id for game {game_data['game_id']}")
+        await context.bot.edit_message_text(
+            chat_id=game_data['chat_id'],
+            message_id=game_data['message_id'],
+            text=summary,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        logger.info(f"Game {game_data['game_id']} message updated successfully to status {game_data['status']}.")
     except Exception as e:
-        logger.error(f"Error in update_game_message for game {game_data['game_id']}: {e}")
+        logger.error(f"Failed to edit message for game {game_data['game_id']}: {e}. Sending new message instead.")
+        # If editing fails (e.g., message too old), send a new one
+        new_message: Message = await context.bot.send_message(
+            chat_id=game_data['chat_id'],
+            text=summary,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        game_data['message_id'] = new_message.message_id
+        save_game_data(game_data) # Update DB with new message ID
+
 # --- Command Handlers ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -261,7 +272,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(
         f"👋 Welcome to Hand Cricket! I'm your bot.!\n\n"
         f"You can register with /register, view your profile with /profile, "
-        f"start a game with /pm <bet_amount>, and check rules with /rules."
+        f"start a game with /pm <bet_amount> or /pm_nobet, and check rules with /rules."
     )
     logger.info(f"Start command received from user {user_id} ({username})")
 
@@ -274,7 +285,7 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         register_user(user_id, username)
         await update.message.reply_text(
             f"🎉 You've been registered! Your starting balance is 4000🪙.\n"
-            f"You can now start a game with /pm <bet_amount>."
+            f"You can now start a game with /pm <bet_amount> or /pm_nobet."
         )
         logger.info(f"User {user_id} ({username}) registered successfully.")
     else:
@@ -309,33 +320,41 @@ async def rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.info(f"Rules command used by user {update.effective_user.id}.")
 
 async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_game(update, context, is_bet_game=True)
+
+async def pm_nobet_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_game(update, context, is_bet_game=False)
+
+async def _start_game(update: Update, context: ContextTypes.DEFAULT_TYPE, is_bet_game: bool) -> None:
     initiator_id = update.effective_user.id
     initiator_username = update.effective_user.username or f"user_{initiator_id}"
     chat_id = update.effective_chat.id
 
-    logger.info(f"pm_command initiated by user {initiator_id} ({initiator_username}) in chat {chat_id}")
+    logger.info(f"Game initiated by user {initiator_id} ({initiator_username}) in chat {chat_id}. Bet game: {is_bet_game}")
 
     # Check if initiator is registered
     if get_user_balance(initiator_id) is None:
         await update.message.reply_text("You need to /register first to start a game!")
-        logger.info(f"User {initiator_id} not registered, /pm failed.")
+        logger.info(f"User {initiator_id} not registered, game initiation failed.")
         return
 
-    # Extract bet amount
-    try:
-        bet_amount = int(context.args[0])
-        if bet_amount <= 0:
-            raise ValueError
-    except (IndexError, ValueError):
-        await update.message.reply_text("Please specify a valid positive bet amount. Example: `/pm 100`")
-        logger.info(f"Invalid bet amount for /pm by user {initiator_id}.")
-        return
+    bet_amount = 0
+    if is_bet_game:
+        # Extract bet amount
+        try:
+            bet_amount = int(context.args[0])
+            if bet_amount <= 0:
+                raise ValueError
+        except (IndexError, ValueError):
+            await update.message.reply_text("Please specify a valid positive bet amount. Example: `/pm 100`")
+            logger.info(f"Invalid bet amount for /pm by user {initiator_id}.")
+            return
 
-    # Check if initiator has enough balance
-    if get_user_balance(initiator_id) < bet_amount:
-        await update.message.reply_text(f"You don't have enough balance ({get_user_balance(initiator_id)}🪙) to bet {bet_amount}🪙.")
-        logger.info(f"User {initiator_id} has insufficient balance for /pm.")
-        return
+        # Check if initiator has enough balance
+        if get_user_balance(initiator_id) < bet_amount:
+            await update.message.reply_text(f"You don't have enough balance ({get_user_balance(initiator_id)}🪙) to bet {bet_amount}🪙.")
+            logger.info(f"User {initiator_id} has insufficient balance for /pm.")
+            return
 
     # Generate unique game ID
     game_id = str(uuid.uuid4())
@@ -351,18 +370,19 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         'initiator_score': 0,
         'opponent_score': 0,
         'bet_amount': bet_amount,
-        'current_turn': 'waiting_for_toss', # Will transition to 'toss_pending' upon join
+        'current_turn': 'waiting_for_toss', # This will be set to 'toss_pending' when joined
         'target': 0,
         'status': 'waiting_for_join',
         'message_id': None, # To be filled after sending message
         'chat_id': chat_id
     }
 
-    # Send initial game message
-    summary = get_game_summary(game_data)
+    # Send initial game message (Simplified as requested)
+    initiator_mention = f"[{initiator_username}](tg://user?id={initiator_id})" # Markdown for user mention
+    message_text = f"{initiator_mention} created a Hand Cricket match!\n\nClick the button below to join."
     reply_markup = get_game_keyboard(game_id)
     sent_message: Message = await update.message.reply_text(
-        summary,
+        message_text,
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -397,21 +417,22 @@ async def handle_cancel_game_callback(update: Update, context: ContextTypes.DEFA
         return
 
     if game_data['initiator_id'] != user_id:
-        await query.edit_message_text("You can only cancel games you initiated.")
+        await query.answer("You can only cancel games you initiated.", show_alert=True) # Pop-up message
         logger.warning(f"User {user_id} tried to cancel game {game_id} which they didn't initiate.")
         return
 
     if game_data['status'] != 'waiting_for_join':
-        await query.edit_message_text("This game is already in progress or completed and cannot be cancelled.")
+        await query.answer("This game is already in progress or completed and cannot be cancelled.", show_alert=True) # Pop-up
         logger.warning(f"User {user_id} tried to cancel game {game_id} which was already {game_data['status']}.")
         return
 
     game_data['status'] = 'cancelled'
     save_game_data(game_data) # Update status in DB
     
-    # Refund the bet amount
-    update_user_balance(game_data['initiator_id'], game_data['bet_amount'])
-    logger.info(f"Bet amount {game_data['bet_amount']} refunded to initiator {game_data['initiator_id']} for cancelled game {game_id}.")
+    # Refund the bet amount if it was a bet game
+    if game_data['bet_amount'] > 0:
+        update_user_balance(game_data['initiator_id'], game_data['bet_amount'])
+        logger.info(f"Bet amount {game_data['bet_amount']} refunded to initiator {game_data['initiator_id']} for cancelled game {game_id}.")
 
     await update_game_message(context, game_data)
     delete_game_data(game_id) # Remove from active_games table
@@ -444,30 +465,31 @@ async def handle_join_game_callback(update: Update, context: ContextTypes.DEFAUL
 
     # Check if opponent is registered
     if get_user_balance(opponent_id) is None:
-        await query.edit_message_text("You need to /register first to join a game!")
+        await query.answer("You need to /register first to join a game!", show_alert=True)
         logger.warning(f"User {opponent_id} not registered, cannot join game {game_id}.")
         return
 
-    # Check if opponent has enough balance
-    if get_user_balance(opponent_id) < game_data['bet_amount']:
-        await query.edit_message_text(f"You don't have enough balance ({get_user_balance(opponent_id)}🪙) to join this game (bet: {game_data['bet_amount']}🪙).")
+    # Check if opponent has enough balance if it's a bet game
+    if game_data['bet_amount'] > 0 and get_user_balance(opponent_id) < game_data['bet_amount']:
+        await query.answer(f"You don't have enough balance ({get_user_balance(opponent_id)}🪙) to join this game (bet: {game_data['bet_amount']}🪙).", show_alert=True)
         logger.warning(f"User {opponent_id} has insufficient balance to join game {game_id}.")
         return
 
     if game_data['status'] != 'waiting_for_join':
-        await query.edit_message_text("This game is no longer open for joining.")
+        await query.answer("This game is no longer open for joining.", show_alert=True)
         logger.warning(f"Game {game_id} is not in 'waiting_for_join' status. Current: {game_data['status']}.")
         return
 
     if game_data['initiator_id'] == opponent_id:
-        await query.edit_message_text("You cannot join your own game!")
+        await query.answer("You cannot join your own game!", show_alert=True)
         logger.warning(f"Initiator {opponent_id} attempted to join their own game {game_id}.")
         return
 
-    # Deduct bet from both players (temporarily, will be adjusted on win/loss)
-    update_user_balance(game_data['initiator_id'], -game_data['bet_amount'])
-    update_user_balance(opponent_id, -game_data['bet_amount'])
-    logger.info(f"Bet {game_data['bet_amount']} deducted from initiator {game_data['initiator_id']} and opponent {opponent_id}.")
+    # Deduct bet from both players (temporarily, will be adjusted on win/loss) if it's a bet game
+    if game_data['bet_amount'] > 0:
+        update_user_balance(game_data['initiator_id'], -game_data['bet_amount'])
+        update_user_balance(opponent_id, -game_data['bet_amount'])
+        logger.info(f"Bet {game_data['bet_amount']} deducted from initiator {game_data['initiator_id']} and opponent {opponent_id}.")
 
     # Update game data for joined game
     game_data['opponent_id'] = opponent_id
@@ -477,29 +499,7 @@ async def handle_join_game_callback(update: Update, context: ContextTypes.DEFAUL
     logger.info(f"Game {game_id} successfully joined by {opponent_id}. Status: {game_data['status']}")
 
     # Update message to show toss options
-    summary = get_game_summary(game_data)
-    reply_markup = get_toss_keyboard(game_id) # Offer toss to initiator
-    
-    try:
-        await context.bot.edit_message_text(
-            chat_id=game_data['chat_id'],
-            message_id=game_data['message_id'],
-            text=summary,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        logger.info(f"Game {game_id} message updated for toss. Msg ID: {game_data['message_id']}, Chat ID: {game_data['chat_id']}")
-    except Exception as e:
-        logger.error(f"Failed to edit message for game {game_id} after join: {e}")
-        await context.bot.send_message(
-            chat_id=game_data['chat_id'],
-            text=f"Game {game_id} has started! {opponent_username} joined. Initiator, please choose odd/even for the toss.",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        # If edit failed, update message_id with new message's ID
-        # game_data['message_id'] = new_message.message_id
-        # save_game_data(game_data)
+    await update_game_message(context, game_data)
 
 
 async def handle_toss_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -510,7 +510,7 @@ async def handle_toss_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     player_username = query.from_user.username or f"user_{player_id}"
 
     try:
-        _, game_id, choice = query.data.split('_', 2) # e.g., "toss_GAMEID_odd"
+        _, game_id, choice = query.data.split('_', 2) # e.g., "toss_GAMEID_heads"
     except ValueError:
         logger.error(f"Invalid toss callback data: {query.data}")
         await query.edit_message_text("Error: Invalid toss data.")
@@ -522,17 +522,19 @@ async def handle_toss_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("This game is not in a toss state or does not exist.")
         return
 
+    # --- IMPORTANT: Only initiator can make the toss choice ---
     if player_id != game_data['initiator_id']:
-        await query.edit_message_text("Only the initiator can make the toss choice.")
+        await query.answer("Only the game initiator can choose Heads or Tails for the toss.", show_alert=True)
+        logger.warning(f"User {player_id} (not initiator) tried to make toss choice for game {game_id}.")
         return
 
-    # Simulate toss
-    toss_result = random.randint(1, 6)
-    is_odd = toss_result % 2 != 0
+    # Simulate toss: 0 for Heads, 1 for Tails
+    toss_result_int = random.randint(0, 1)
+    toss_result_name = "Heads" if toss_result_int == 0 else "Tails"
 
     won_toss = False
-    if (choice == 'odd' and is_odd) or \
-       (choice == 'even' and not is_odd):
+    if (choice == 'heads' and toss_result_int == 0) or \
+       (choice == 'tails' and toss_result_int == 1):
         won_toss = True
 
     toss_winner_id = game_data['initiator_id'] if won_toss else game_data['opponent_id']
@@ -541,28 +543,10 @@ async def handle_toss_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     game_data['status'] = 'choice_pending'
     game_data['current_turn'] = toss_winner_username # Temporarily store winner's username for choice message
     save_game_data(game_data)
-    logger.info(f"Toss for game {game_id}: Initiator chose {choice}, result was {toss_result} ({'odd' if is_odd else 'even'}). Winner: {toss_winner_username}")
+    logger.info(f"Toss for game {game_id}: Initiator chose {choice}, result was {toss_result_name}. Winner: {toss_winner_username}")
 
-    summary = get_game_summary(game_data) + f"\n\n{toss_winner_username} won the toss ({toss_result} was {'odd' if is_odd else 'even'})."
-    reply_markup = get_bat_bowl_choice_keyboard(game_id)
-
-    # Offer bat/bowl choice to the winner
-    try:
-        await context.bot.edit_message_text(
-            chat_id=game_data['chat_id'],
-            message_id=game_data['message_id'],
-            text=summary,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Failed to edit message for toss result in game {game_id}: {e}")
-        await context.bot.send_message(
-            chat_id=game_data['chat_id'],
-            text=summary,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+    extra_message = f"{toss_winner_username} won the toss ({toss_result_name})."
+    await update_game_message(context, game_data, extra_text=extra_message)
 
 async def handle_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -588,7 +572,7 @@ async def handle_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
     toss_winner_id = game_data['initiator_id'] if game_data['current_turn'] == game_data['initiator_username'] else game_data['opponent_id']
 
     if player_id != toss_winner_id:
-        await query.edit_message_text("Only the toss winner can choose to bat or bowl.")
+        await query.answer("Only the toss winner can choose to bat or bowl.", show_alert=True)
         return
 
     # Set initial turn based on choice
@@ -607,26 +591,7 @@ async def handle_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
     save_game_data(game_data)
     logger.info(f"Game {game_id}: {player_username} chose to {choice}. Current turn: {game_data['current_turn']}")
 
-    summary = get_game_summary(game_data)
-    reply_markup = get_play_keyboard(game_id)
-    
-    try:
-        await context.bot.edit_message_text(
-            chat_id=game_data['chat_id'],
-            message_id=game_data['message_id'],
-            text=summary,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Failed to edit message for bat/bowl choice in game {game_id}: {e}")
-        await context.bot.send_message(
-            chat_id=game_data['chat_id'],
-            text=summary,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-
+    await update_game_message(context, game_data)
 async def handle_play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -635,7 +600,7 @@ async def handle_play_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     player_username = query.from_user.username or f"user_{player_id}"
 
     try:
-        _, game_id, chosen_run_str = query.data.split('_', 2) # e.g., "play_GAMEID_3"
+        _, game_id, chosen_run_str = query.data.split('_', 2) # e.g., "play_game_GAMEID_3"
         chosen_run = int(chosen_run_str)
     except ValueError:
         logger.error(f"Invalid play callback data: {query.data}")
@@ -665,29 +630,43 @@ async def handle_play_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # Check if the player clicking the button is the current batsman OR bowler
-    if player_id != batsman_id and player_id != bowler_id:
-        await query.edit_message_text("It's not your turn to play!")
-        return
+    # This bot design assumes that both players click a button representing their choice
+    # at roughly the same time, or that the bot waits for both.
+    # For a simple single-button-click-per-player model, we need to know whose turn it is
+    # and whether they are batting or bowling.
+    # Here, we need to ensure the correct player is interacting.
 
-    # Get the opponent's choice (since this is a single-player click)
-    # This implies that the 'play' button might be clicked by both players simultaneously
-    # For now, we assume a single player action. If both click, it's a race condition.
-    # A more advanced bot would use different keyboards for batsman/bowler.
-    # For now, if the user clicks, their chosen_run is their 'play'.
-    # We need the other player's input or a random choice for the opponent.
+    # This part of the logic needs careful consideration. If both players click the same button
+    # on the same message, it's difficult to distinguish their roles (batsman vs. bowler choice).
+    # A robust solution might involve:
+    # 1. Sending separate keyboards/messages to batsman and bowler.
+    # 2. Storing 'pending_choice' for each player and processing when both are received.
+    #
+    # Given the current structure (single 'play_game' callback for both), we will simulate
+    # the 'other' player's choice. This is a simplification.
 
-    # Simulating opponent's choice (for simplicity, as we don't have separate input from 2nd player on 1 button click)
-    opponent_choice = random.randint(1, 6)
-
-    # Determine who chose what
+    # If the user clicking is the batsman, their choice is `chosen_run`. Bowler's is random.
     if player_id == batsman_id:
         batsman_choice = chosen_run
-        bowler_choice = opponent_choice # Simulated opponent's choice
-    else: # player_id == bowler_id
+        bowler_choice = random.randint(1, 6) # Simulated bowler's choice
+        # If the bowler clicks when it's batsman's turn, deny action.
+        if player_id == bowler_id:
+            await query.answer("It's the batsman's turn to play!", show_alert=True)
+            return
+    # If the user clicking is the bowler, their choice is `chosen_run`. Batsman's is random.
+    elif player_id == bowler_id:
         bowler_choice = chosen_run
-        batsman_choice = opponent_choice # Simulated opponent's choice
+        batsman_choice = random.randint(1, 6) # Simulated batsman's choice
+        # If the batsman clicks when it's bowler's turn, deny action.
+        if player_id == batsman_id:
+            await query.answer("It's the bowler's turn to play!", show_alert=True)
+            return
+    else:
+        await query.answer("It's not your turn to play!", show_alert=True)
+        return
 
-    logger.debug(f"Game {game_id}: Batsman ({game_data['initiator_username'] if batsman_id == initiator_id else game_data['opponent_username']}) chose {batsman_choice}, Bowler ({game_data['initiator_username'] if bowler_id == initiator_id else game_data['opponent_username']}) chose {bowler_choice}.")
+
+    logger.debug(f"Game {game_id}: Batsman chose {batsman_choice}, Bowler chose {bowler_choice}.")
 
     outcome_message = f"Batsman played: {batsman_choice}, Bowler played: {bowler_choice}.\n"
 
@@ -725,18 +704,21 @@ async def handle_play_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     # Game completion logic (after potential out or target reached)
     if game_data['status'] == 'completed':
         winner_id = None
-        if game_data['initiator_score'] > game_data['opponent_score']:
-            winner_id = initiator_id
-        elif game_data['opponent_score'] > game_data['initiator_score']:
-            winner_id = opponent_id
+        if game_data['bet_amount'] > 0: # Only process payouts for bet games
+            if game_data['initiator_score'] > game_data['opponent_score']:
+                winner_id = initiator_id
+            elif game_data['opponent_score'] > game_data['initiator_score']:
+                winner_id = opponent_id
 
-        if winner_id:
-            update_user_balance(winner_id, game_data['bet_amount'] * 2) # Winner gets back bet + opponent's bet
-            logger.info(f"Game {game_id} completed. Winner: {winner_id}. Awarded {game_data['bet_amount'] * 2} coins.")
-        else: # Tie
-            update_user_balance(initiator_id, game_data['bet_amount']) # Refund initiator
-            update_user_balance(opponent_id, game_data['bet_amount']) # Refund opponent
-            logger.info(f"Game {game_id} completed. It's a tie. Bets refunded.")
+            if winner_id:
+                update_user_balance(winner_id, game_data['bet_amount'] * 2) # Winner gets back bet + opponent's bet
+                logger.info(f"Game {game_id} completed. Winner: {winner_id}. Awarded {game_data['bet_amount'] * 2} coins.")
+            else: # Tie
+                update_user_balance(initiator_id, game_data['bet_amount']) # Refund initiator
+                update_user_balance(opponent_id, game_data['bet_amount']) # Refund opponent
+                logger.info(f"Game {game_id} completed. It's a tie. Bets refunded.")
+        else: # No bet game
+            logger.info(f"Game {game_id} (no bet) completed. No balance changes.")
         
         # After game completion, delete it from active_games
         delete_game_data(game_id)
@@ -745,29 +727,7 @@ async def handle_play_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     save_game_data(game_data) # Save updated game state
 
     # Update the message
-    summary = get_game_summary(game_data)
-    reply_markup = None
-    if game_data['status'] == 'in_progress':
-        reply_markup = get_play_keyboard(game_id)
-    
-    try:
-        await context.bot.edit_message_text(
-            chat_id=game_data['chat_id'],
-            message_id=game_data['message_id'],
-            text=f"{summary}\n\n{outcome_message}",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Failed to edit message for play callback in game {game_id}: {e}")
-        await context.bot.send_message(
-            chat_id=game_data['chat_id'],
-            text=f"Game {game_id} update:\n{summary}\n\n{outcome_message}",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-
-
+    await update_game_message(context, game_data, extra_text=outcome_message)
 # --- Error Handling ---
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -819,7 +779,8 @@ def main() -> None:
     application.add_handler(CommandHandler("register", register_command))
     application.add_handler(CommandHandler("profile", profile_command))
     application.add_handler(CommandHandler("rules", rules_command))
-    application.add_handler(CommandHandler("pm", pm_command))
+    application.add_handler(CommandHandler("pm", pm_command)) # For bet games
+    application.add_handler(CommandHandler("pm_nobet", pm_nobet_command)) # For no-bet games
 
     # Callback query handlers
     application.add_handler(CallbackQueryHandler(handle_join_game_callback, pattern=r"^join_game_"))
