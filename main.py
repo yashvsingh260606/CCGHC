@@ -1,13 +1,13 @@
-# PART 1: Config, Database, Utilities, User Registration, and Profile
+# PART 1: Config, Utilities, JSON Storage, User Registration, and Profile
 
 import os
+import json
 import logging
 import asyncio
 import random
 import time
 from typing import List, Dict, Any, Optional
 
-from pymongo import MongoClient, DESCENDING
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 )
@@ -25,20 +25,39 @@ from telegram.ext import (
 BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # <-- PUT YOUR BOT TOKEN HERE
 ADMIN_IDS: List[int] = [123456789, 987654321]  # <-- PUT ADMIN USER IDs HERE
 
-MONGO_URL = os.environ.get("MONGO_URL")
-if not MONGO_URL:
-    raise Exception("MONGO_URL environment variable not set!")
-
-client = MongoClient(MONGO_URL)
-db = client["handcricket_bot"]
-users_col = db["users"]
-matches_col = db["matches"]
+USERS_FILE = "users.json"
+MATCHES_FILE = "matches.json"
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# ====== JSON UTILITIES ======
+
+def load_json(filename: str) -> Any:
+    if not os.path.exists(filename):
+        with open(filename, "w") as f:
+            json.dump({}, f)
+    with open(filename, "r") as f:
+        return json.load(f)
+
+def save_json(filename: str, data: Any):
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=2)
+
+def get_users() -> Dict[str, Any]:
+    return load_json(USERS_FILE)
+
+def save_users(users: Dict[str, Any]):
+    save_json(USERS_FILE, users)
+
+def get_matches() -> Dict[str, Any]:
+    return load_json(MATCHES_FILE)
+
+def save_matches(matches: Dict[str, Any]):
+    save_json(MATCHES_FILE, matches)
 
 # ====== USER REGISTRATION ======
 CHOOSING_USERNAME = 1
@@ -64,7 +83,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if users_col.find_one({"user_id": user.id}):
+    users = get_users()
+    if str(user.id) in users:
         await update.message.reply_text("You are already registered!")
         return ConversationHandler.END
     await update.message.reply_text("Enter your preferred username:")
@@ -73,7 +93,8 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def register_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.text.strip()
     user = update.effective_user
-    users_col.insert_one({
+    users = get_users()
+    users[str(user.id)] = {
         "user_id": user.id,
         "name": user.full_name,
         "username": username,
@@ -83,13 +104,15 @@ async def register_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "games_played": 0,
         "registered": True,
         "created_at": time.time()
-    })
+    }
+    save_users(users)
     await update.message.reply_text(f"Registered as {username}! Use /profile to view your stats.")
     return ConversationHandler.END
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    data = users_col.find_one({"user_id": user.id})
+    users = get_users()
+    data = users.get(str(user.id))
     if data:
         await update.message.reply_text(
             f"👤 {data['username']}\n"
@@ -102,7 +125,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You are not registered yet. Use /register first.")
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    top = list(users_col.find().sort("coins", DESCENDING).limit(10))
+    users = get_users()
+    top = sorted(users.values(), key=lambda x: x.get("coins", 0), reverse=True)[:10]
     if not top:
         await update.message.reply_text("No players registered yet.")
         return
@@ -110,7 +134,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, user in enumerate(top):
         msg += f"{i+1}. {user.get('username', user.get('name', 'Unknown'))}: {user.get('coins', 0)} coins\n"
     await update.message.reply_text(msg)
-    # PART 2: /pm Command (Play Match), Join Logic, and Match Creation
+# PART 2: /pm Command (Play Match), Join Logic, and Match Creation
 
 async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -124,8 +148,8 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Generate a unique match_id (timestamp + user_id + chat_id)
     match_id = f"{int(time.time())}_{user.id}_{chat.id}"
 
-    # Insert match into MongoDB
-    matches_col.insert_one({
+    matches = get_matches()
+    matches[match_id] = {
         "match_id": match_id,
         "chat_id": chat.id,
         "creator_id": user.id,
@@ -134,14 +158,13 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "player_names": [user.full_name],
         "status": "waiting",
         "created_at": time.time()
-    })
+    }
+    save_matches(matches)
 
-    # Build join button
     join_button = InlineKeyboardMarkup([
         [InlineKeyboardButton("Join", callback_data=f"join_{match_id}")]
     ])
 
-    # Announce match with join button
     await update.message.reply_text(
         f"🏏 {user.full_name} started the match!\nClick below to join the game.",
         reply_markup=join_button
@@ -150,10 +173,11 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = query.from_user
-    data = query.data  # e.g., "join_1234567890_12345_67890"
+    data = query.data
     match_id = data.split("_", 1)[1]
 
-    match = matches_col.find_one({"match_id": match_id})
+    matches = get_matches()
+    match = matches.get(match_id)
     if not match:
         await query.answer("Match not found.", show_alert=True)
         return
@@ -162,16 +186,12 @@ async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer("You have already joined this match.", show_alert=True)
         return
 
-    # Add user to match
-    matches_col.update_one(
-        {"match_id": match_id},
-        {"$push": {"players": user.id, "player_names": user.full_name}}
-    )
+    match["players"].append(user.id)
+    match["player_names"].append(user.full_name)
+    save_matches(matches)
 
     await query.answer("You joined the match!", show_alert=True)
-    # Optionally, edit the message to show updated player list
-    updated_match = matches_col.find_one({"match_id": match_id})
-    player_list = "\n".join(updated_match["player_names"])
+    player_list = "\n".join(match["player_names"])
     await query.edit_message_text(
         f"🏏 {match['creator_name']} started the match!\nPlayers:\n{player_list}\nClick below to join the game.",
         reply_markup=InlineKeyboardMarkup([
@@ -184,15 +204,15 @@ async def toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    # Expect: /toss <match_id>
     try:
         match_id = context.args[0]
     except (IndexError, ValueError):
         await update.message.reply_text("Usage: /toss <match_id>")
         return
 
-    match = matches_col.find_one({"match_id": match_id, "status": "waiting"})
-    if not match:
+    matches = get_matches()
+    match = matches.get(match_id)
+    if not match or match["status"] != "waiting":
         await update.message.reply_text("Match not found or already started.")
         return
 
@@ -204,21 +224,16 @@ async def toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("At least 2 players required to start the toss.")
         return
 
-    # Randomly pick who bats/bowls first
     toss_winner = random.choice(match["players"])
     toss_loser = [pid for pid in match["players"] if pid != toss_winner][0]
 
-    matches_col.update_one(
-        {"match_id": match_id},
-        {"$set": {
-            "status": "in_progress",
-            "toss_winner": toss_winner,
-            "toss_loser": toss_loser,
-            "current_inning": 1,
-            "scores": {str(toss_winner): 0, str(toss_loser): 0},
-            "turn": toss_winner
-        }}
-    )
+    match["status"] = "in_progress"
+    match["toss_winner"] = toss_winner
+    match["toss_loser"] = toss_loser
+    match["current_inning"] = 1
+    match["scores"] = {str(toss_winner): 0, str(toss_loser): 0}
+    match["turn"] = toss_winner
+    save_matches(matches)
 
     await update.message.reply_text(
         f"Toss done! <a href='tg://user?id={toss_winner}'>Player</a> won the toss and will bat first.",
@@ -229,20 +244,23 @@ async def forfeit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
+    matches = get_matches()
     # Find an active match where this user is a player and status is not ended
-    match = matches_col.find_one({
-        "chat_id": chat.id,
-        "players": user.id,
-        "status": {"$in": ["waiting", "in_progress"]}
-    })
+    match = next(
+        (m for m in matches.values() if m["chat_id"] == chat.id and user.id in m["players"] and m["status"] in ["waiting", "in_progress"]),
+        None
+    )
 
     if not match:
         await update.message.reply_text("You are not in any active match here.")
         return
 
+    users = get_users()
+
     # If toss not started (status == 'waiting')
     if match["status"] == "waiting":
-        matches_col.delete_one({"match_id": match["match_id"]})
+        del matches[match["match_id"]]
+        save_matches(matches)
         await update.message.reply_text("Match canceled. No win/loss recorded.")
         return
 
@@ -254,12 +272,15 @@ async def forfeit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     opponent_id = opponent_ids[0]
 
     # Update stats: win for opponent, loss for forfeiter
-    users_col.update_one({"user_id": opponent_id}, {"$inc": {"wins": 1}})
-    users_col.update_one({"user_id": user.id}, {"$inc": {"losses": 1}})
-    matches_col.update_one(
-        {"match_id": match["match_id"]},
-        {"$set": {"status": "forfeited", "winner": opponent_id, "ended_at": time.time()}}
-    )
+    if str(opponent_id) in users:
+        users[str(opponent_id)]["wins"] += 1
+    if str(user.id) in users:
+        users[str(user.id)]["losses"] += 1
+    save_users(users)
+    match["status"] = "forfeited"
+    match["winner"] = opponent_id
+    match["ended_at"] = time.time()
+    save_matches(matches)
     await update.message.reply_text("You forfeited the match. Opponent is declared the winner.")
 
 async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -275,12 +296,14 @@ async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /add <user_id> <amount>")
         return
 
-    result = users_col.update_one({"user_id": target_id}, {"$inc": {"coins": amount}})
-    if result.matched_count:
+    users = get_users()
+    if str(target_id) in users:
+        users[str(target_id)]["coins"] += amount
+        save_users(users)
         await update.message.reply_text(f"Added {amount} coins to user {target_id}.")
     else:
         await update.message.reply_text("User not found.")
-  # PART 4: Main Function, Handlers, and Application Setup
+# PART 4: Main Function, Handlers, and Application Setup
 
 async def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -314,4 +337,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
+    
