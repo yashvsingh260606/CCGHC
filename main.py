@@ -513,7 +513,8 @@ async def resolve_ball(update, context, match, query):
             match["bowler_choice"] = None
             await query.edit_message_text(msg, reply_markup=get_number_buttons())
 async def end_match(context: ContextTypes.DEFAULT_TYPE, chat_id, winner_idx, loser_idx, match):
-winner_id = match["players"][winner_idx]
+    """Handle match ending: update stats, payout bet, announce winner."""
+    winner_id = match["players"][winner_idx]
     loser_id = match["players"][loser_idx]
     winner_name = match["player_names"][winner_idx]
     loser_name = match["player_names"][loser_idx]
