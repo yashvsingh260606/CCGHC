@@ -1,5 +1,5 @@
 import os
-import psycopg2
+from pymongo import MongoClient
 
-def get_connection():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+client = MongoClient(os.environ["MONGO_URL"])
+db = client["your_db_name"]
