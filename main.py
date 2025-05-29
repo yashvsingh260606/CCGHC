@@ -1,4 +1,4 @@
-# PART 1: Config, Utilities, JSON Storage, User Registration, and Profile
+# PART 1: Imports, Config, JSON Utilities, User Registration & Profile
 
 import os
 import json
@@ -9,7 +9,7 @@ import time
 from typing import List, Dict, Any, Optional
 
 from telegram import (
-    Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+    Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Chat
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -24,6 +24,7 @@ from telegram.ext import (
 # ===== CONFIGURATION =====
 BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # <-- PUT YOUR BOT TOKEN HERE
 ADMIN_IDS: List[int] = [123456789, 987654321]  # <-- PUT ADMIN USER IDs HERE
+INACTIVITY_TIMEOUT = 20 * 60  # 20 minutes in seconds
 
 USERS_FILE = "users.json"
 MATCHES_FILE = "matches.json"
@@ -76,8 +77,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/profile - View your stats\n"
         "/leaderboard - Top players\n"
         "/pm - Start a match (groups only)\n"
-        "/toss <match_id> - Start toss for a match\n"
-        "/forfeit - Forfeit/cancel a match\n"
         "/add <user_id> <amount> - (admin) Add coins to a user"
     )
 
@@ -134,7 +133,10 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, user in enumerate(top):
         msg += f"{i+1}. {user.get('username', user.get('name', 'Unknown'))}: {user.get('coins', 0)} coins\n"
     await update.message.reply_text(msg)
-# PART 2: /pm Command (Play Match), Join Logic, and Match Creation
+# PART 2: /pm Command, Join Button, Match Creation & Multiple Matches
+
+def get_new_match_id(user_id, chat_id):
+    return f"{int(time.time())}_{user_id}_{chat_id}_{random.randint(1000,9999)}"
 
 async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -145,8 +147,8 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ /pm can only be used in groups!")
         return
 
-    # Generate a unique match_id (timestamp + user_id + chat_id)
-    match_id = f"{int(time.time())}_{user.id}_{chat.id}"
+    # Generate a unique match_id (timestamp + user_id + chat_id + random)
+    match_id = get_new_match_id(user.id, chat.id)
 
     matches = get_matches()
     matches[match_id] = {
@@ -157,7 +159,15 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "players": [user.id],
         "player_names": [user.full_name],
         "status": "waiting",
-        "created_at": time.time()
+        "created_at": time.time(),
+        "last_action": time.time(),
+        "turn": None,
+        "toss": None,
+        "innings": 1,
+        "scores": {},
+        "wickets": {},
+        "target": None,
+        "logs": []
     }
     save_matches(matches)
 
@@ -188,6 +198,7 @@ async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     match["players"].append(user.id)
     match["player_names"].append(user.full_name)
+    match["last_action"] = time.time()
     save_matches(matches)
 
     await query.answer("You joined the match!", show_alert=True)
@@ -198,90 +209,157 @@ async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("Join", callback_data=f"join_{match_id}")]
         ])
     )
-# PART 3: Toss, Forfeit, and Admin Add Coins
+# PART 3: Match Flow - Toss, Bat/Bowl, Innings, Switching, End Game
 
-async def toss(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
-
-    try:
-        match_id = context.args[0]
-    except (IndexError, ValueError):
-        await update.message.reply_text("Usage: /toss <match_id>")
-        return
+    text = update.message.text.strip().lower()
 
     matches = get_matches()
-    match = matches.get(match_id)
-    if not match or match["status"] != "waiting":
-        await update.message.reply_text("Match not found or already started.")
-        return
+    # Find the latest match in this chat where this user is a player and match is not ended
+    active_matches = [
+        m for m in matches.values()
+        if m["chat_id"] == chat.id and user.id in m["players"] and m["status"] in ["waiting", "in_progress"]
+    ]
+    if not active_matches:
+        return  # Ignore unrelated messages
 
-    if user.id not in match["players"]:
-        await update.message.reply_text("You are not a player in this match.")
-        return
+    # Always pick the most recent active match for this user in this chat
+    match = sorted(active_matches, key=lambda m: m["created_at"], reverse=True)[0]
+    match_id = match["match_id"]
 
-    if len(match["players"]) < 2:
-        await update.message.reply_text("At least 2 players required to start the toss.")
-        return
+    # Update last action time
+    match["last_action"] = time.time()
 
-    toss_winner = random.choice(match["players"])
-    toss_loser = [pid for pid in match["players"] if pid != toss_winner][0]
+    # TOSS PHASE
+    if match["status"] == "waiting" and len(match["players"]) == 2:
+        if not match.get("toss"):
+            # Ask both players for "heads" or "tails"
+            if "toss_choice" not in match:
+                match["toss_choice"] = {}
+            if user.id not in match["toss_choice"]:
+                if text in ["heads", "tails"]:
+                    match["toss_choice"][user.id] = text
+                    save_matches(matches)
+                    await update.message.reply_text(f"{user.first_name} picked {text} for toss.")
+                else:
+                    await update.message.reply_text("Toss time! Type 'heads' or 'tails'.")
+                    save_matches(matches)
+                    return
+            # Wait for both
+            if len(match["toss_choice"]) < 2:
+                save_matches(matches)
+                return
+            # Both have chosen, do the toss
+            toss_result = random.choice(["heads", "tails"])
+            p1, p2 = match["players"]
+            p1_choice = match["toss_choice"][p1]
+            p2_choice = match["toss_choice"][p2]
+            if p1_choice == toss_result:
+                toss_winner = p1
+                toss_loser = p2
+            else:
+                toss_winner = p2
+                toss_loser = p1
+            match["toss"] = {
+                "result": toss_result,
+                "winner": toss_winner,
+                "loser": toss_loser
+            }
+            match["status"] = "in_progress"
+            match["turn"] = toss_winner
+            match["innings"] = 1
+            match["scores"] = {str(p1): 0, str(p2): 0}
+            match["wickets"] = {str(p1): 0, str(p2): 0}
+            match["logs"].append(f"Toss: {toss_result}. {toss_winner} bats first.")
+            save_matches(matches)
+            await update.message.reply_text(
+                f"Toss result: {toss_result}. <a href='tg://user?id={toss_winner}'>Player</a> bats first!\n"
+                "Batting: Send a number (1-6) to bat. Bowler: Send a number (1-6) to bowl.",
+                parse_mode="HTML"
+            )
+            return
 
-    match["status"] = "in_progress"
-    match["toss_winner"] = toss_winner
-    match["toss_loser"] = toss_loser
-    match["current_inning"] = 1
-    match["scores"] = {str(toss_winner): 0, str(toss_loser): 0}
-    match["turn"] = toss_winner
-    save_matches(matches)
-
-    await update.message.reply_text(
-        f"Toss done! <a href='tg://user?id={toss_winner}'>Player</a> won the toss and will bat first.",
-        parse_mode="HTML"
-    )
-
-async def forfeit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    chat = update.effective_chat
-
-    matches = get_matches()
-    # Find an active match where this user is a player and status is not ended
-    match = next(
-        (m for m in matches.values() if m["chat_id"] == chat.id and user.id in m["players"] and m["status"] in ["waiting", "in_progress"]),
-        None
-    )
-
-    if not match:
-        await update.message.reply_text("You are not in any active match here.")
-        return
-
-    users = get_users()
-
-    # If toss not started (status == 'waiting')
-    if match["status"] == "waiting":
-        del matches[match["match_id"]]
+    # INNINGS PHASE
+    if match["status"] == "in_progress" and len(match["players"]) == 2:
+        p1, p2 = match["players"]
+        batsman = match["turn"]
+        bowler = p2 if batsman == p1 else p1
+        # Both must send a number 1-6
+        if "current_play" not in match:
+            match["current_play"] = {}
+        if user.id not in [batsman, bowler]:
+            await update.message.reply_text("You're not batting or bowling in this match.")
+            save_matches(matches)
+            return
+        try:
+            num = int(text)
+            if num < 1 or num > 6:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("Send a number between 1 and 6.")
+            save_matches(matches)
+            return
+        match["current_play"][user.id] = num
+        # Wait for both
+        if len(match["current_play"]) < 2:
+            save_matches(matches)
+            return
+        # Both have played, resolve
+        bat_num = match["current_play"][batsman]
+        bowl_num = match["current_play"][bowler]
+        if bat_num == bowl_num:
+            match["wickets"][str(batsman)] += 1
+            match["logs"].append(f"OUT! Bat: {bat_num}, Bowl: {bowl_num}")
+            await update.message.reply_text(f"OUT! Bat: {bat_num}, Bowl: {bowl_num}")
+        else:
+            match["scores"][str(batsman)] += bat_num
+            match["logs"].append(f"Run! Bat: {bat_num}, Bowl: {bowl_num}")
+            await update.message.reply_text(f"Run! Bat: {bat_num}, Bowl: {bowl_num}")
+        match["current_play"] = {}
+        # Check for innings end
+        if match["wickets"][str(batsman)] >= 2:  # 2 wickets per innings
+            if match["innings"] == 1:
+                match["innings"] = 2
+                match["turn"] = bowler
+                match["target"] = match["scores"][str(batsman)] + 1
+                await update.message.reply_text(
+                    f"Innings over! Target for next player: {match['target']} runs. Switch roles!"
+                )
+                match["logs"].append(f"Innings over. Target: {match['target']}")
+            else:
+                # End game, decide winner
+                score1 = match["scores"][str(p1)]
+                score2 = match["scores"][str(p2)]
+                if score1 > score2:
+                    winner = p1
+                    loser = p2
+                elif score2 > score1:
+                    winner = p2
+                    loser = p1
+                else:
+                    winner = None
+                    loser = None
+                match["status"] = "ended"
+                match["ended_at"] = time.time()
+                users = get_users()
+                if winner:
+                    users[str(winner)]["wins"] += 1
+                    users[str(loser)]["losses"] += 1
+                    await update.message.reply_text(
+                        f"🏆 <a href='tg://user?id={winner}'>Player</a> wins the match!\n"
+                        f"Scores: {score1} - {score2}",
+                        parse_mode="HTML"
+                    )
+                else:
+                    await update.message.reply_text(f"Match tied! Scores: {score1} - {score2}")
+                save_users(users)
+                save_matches(matches)
+                return
         save_matches(matches)
-        await update.message.reply_text("Match canceled. No win/loss recorded.")
         return
-
-    # If toss started or game in progress
-    opponent_ids = [p for p in match["players"] if p != user.id]
-    if not opponent_ids:
-        await update.message.reply_text("No opponent found.")
-        return
-    opponent_id = opponent_ids[0]
-
-    # Update stats: win for opponent, loss for forfeiter
-    if str(opponent_id) in users:
-        users[str(opponent_id)]["wins"] += 1
-    if str(user.id) in users:
-        users[str(user.id)]["losses"] += 1
-    save_users(users)
-    match["status"] = "forfeited"
-    match["winner"] = opponent_id
-    match["ended_at"] = time.time()
-    save_matches(matches)
-    await update.message.reply_text("You forfeited the match. Opponent is declared the winner.")
+# PART 4: Admin /add Command, Inactivity Checker, and Utilities
 
 async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -303,7 +381,41 @@ async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Added {amount} coins to user {target_id}.")
     else:
         await update.message.reply_text("User not found.")
-# PART 4: Main Function, Handlers, and Application Setup
+
+async def inactivity_checker(application):
+    while True:
+        matches = get_matches()
+        users = get_users()
+        now = time.time()
+        changed = False
+        for match_id, match in list(matches.items()):
+            if match["status"] in ["ended", "forfeited"]:
+                continue
+            if now - match.get("last_action", now) > INACTIVITY_TIMEOUT:
+                # Find which player's turn it is
+                if match["status"] == "waiting":
+                    # Cancel match, no win/loss
+                    match["status"] = "ended"
+                    match["ended_at"] = now
+                    changed = True
+                    continue
+                batsman = match["turn"]
+                bowler = [p for p in match["players"] if p != batsman][0]
+                # The player who didn't act loses
+                loser = batsman
+                winner = bowler
+                match["status"] = "ended"
+                match["ended_at"] = now
+                if str(winner) in users:
+                    users[str(winner)]["wins"] += 1
+                if str(loser) in users:
+                    users[str(loser)]["losses"] += 1
+                changed = True
+        if changed:
+            save_matches(matches)
+            save_users(users)
+        await asyncio.sleep(60)
+# PART 5: Main Function, Handlers, and Application Setup
 
 async def main():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -315,8 +427,6 @@ async def main():
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
     application.add_handler(CommandHandler("pm", pm_command))
-    application.add_handler(CommandHandler("toss", toss))
-    application.add_handler(CommandHandler("forfeit", forfeit))
     application.add_handler(CommandHandler("add", add_coins))
 
     # Registration conversation
@@ -331,10 +441,29 @@ async def main():
 
     # Callback handler for join button
     application.add_handler(CallbackQueryHandler(join_match_callback, pattern=r"^join_"))
+    # Message handler for match flow (toss, bat, bowl, etc.)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Start inactivity checker
+    loop = asyncio.get_event_loop()
+    loop.create_task(inactivity_checker(application))
 
     print("HandCricket CCG Bot is running...")
     await application.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
-    
+    import sys
+    import asyncio
+
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "already running" in str(e):
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())
+            loop.run_forever()
+        else:
+            raise
