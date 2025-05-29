@@ -1,14 +1,13 @@
-import os
 import psycopg2
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# --- Database Setup ---
+# --- HARDCODE YOUR CREDENTIALS HERE ---
+POSTGRES_URL = "${{ Postgres.DATABASE_URL }}"  # <-- Replace this with your Railway Postgres URL
+BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"                  # <-- Replace this with your Telegram bot token
 
 def get_connection():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    return psycopg2.connect(POSTGRES_URL)
 
 def create_tables():
     conn = get_connection()
@@ -27,8 +26,6 @@ def create_tables():
     conn.commit()
     cur.close()
     conn.close()
-
-# --- Bot Commands ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -70,11 +67,9 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "You are not registered yet. Use /register first."
         )
 
-# --- Main Function ---
-
 async def main():
     create_tables()
-    app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("register", register))
     app.add_handler(CommandHandler("profile", profile))
