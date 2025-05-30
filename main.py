@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 BOT_NAME = "CCG HandCricket"
 COINS_EMOJI = "🪙"
-ADMIN_IDS = {123456789}  # Замените на ваши Telegram ID админов
+ADMIN_IDS = {7361215114}  # Замените на ваши Telegram ID админов
 
 USERS = {}  # user_id: {name, coins, wins, losses, registered, last_daily}
 MATCHES = {}  # chat_id: match_data
