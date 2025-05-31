@@ -29,7 +29,7 @@ BOT_NAME = "CCG HandCricket"
 COINS_EMOJI = "🪙"
 ADMIN_IDS = {7361215114}  # Replace with your Telegram admin IDs
 
-# --- Bot Token and MongoDB URL ---
+# --- Bot Token and MongoDB URL (declare here) ---
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your Telegram bot token
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB connection URL
 
@@ -294,7 +294,6 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "superball": False,
     }
 
-    # Track match for user
     USER_MATCHES.setdefault(user.id, set()).add(match_id)
 
     await save_match(match_id)
@@ -313,7 +312,6 @@ async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     user = update.effective_user
 
-    # Extract match_id from callback_data
     data = query.data  # e.g., "join_match_<match_id>"
     _, _, match_id = data.split("_", 2)
 
@@ -337,12 +335,10 @@ async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer(f"You don't have enough coins to join this bet ({bet}{COINS_EMOJI}).", show_alert=True)
         return
 
-    # Add player to match and track
     match["players"].append(user.id)
     match["scores"][user.id] = 0
     USER_MATCHES.setdefault(user.id, set()).add(match_id)
 
-    # Deduct bet if any
     if bet > 0:
         USERS[match["inviter"]]["coins"] -= bet
         USERS[user.id]["coins"] -= bet
