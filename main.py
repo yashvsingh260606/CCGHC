@@ -1,6 +1,6 @@
-
 import logging
 import random
+import uuid
 from datetime import datetime, timedelta
 
 from telegram import (
@@ -13,32 +13,73 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    filters,
 )
 
+from motor.motor_asyncio import AsyncIOMotorClient
+
+# --- Logging ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+# --- Constants ---
 BOT_NAME = "CCG HandCricket"
 COINS_EMOJI = "🪙"
-ADMIN_IDS = {7361215114}  # Замените на ваши Telegram ID админов
+ADMIN_IDS = {7361215114}  # Replace with your Telegram admin IDs
 
-USERS = {}  # user_id: {name, coins, wins, losses, registered, last_daily}
-MATCHES = {}  # chat_id: match_data
+# --- MongoDB Setup ---
+MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB URL
+mongo_client = AsyncIOMotorClient(MONGO_URL)
+db = mongo_client.handcricket  # Database name
+
+# --- In-memory caches ---
+USERS = {}  # user_id: user_data dict
+MATCHES = {}  # match_id: match_data dict
+USER_MATCHES = {}  # user_id: set of match_ids
 LEADERBOARD_PAGE = {}  # user_id: 0 or 1 (coins/wins page)
 
-# --- Вспомогательные функции ---
-
+# --- Helper Functions ---
 
 def get_username(user):
     return user.first_name or user.username or "Player"
 
+async def load_users():
+    cursor = db.users.find({})
+    async for user in cursor:
+        USERS[user["user_id"]] = user
+        USER_MATCHES[user["user_id"]] = set(user.get("active_matches", []))
+    logger.info("Users loaded from DB")
+
+async def save_user(user_id):
+    user = USERS[user_id]
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {**user, "active_matches": list(USER_MATCHES.get(user_id, []))}},
+        upsert=True,
+    )
+
+async def load_matches():
+    cursor = db.matches.find({})
+    async for match in cursor:
+        MATCHES[match["match_id"]] = match
+    logger.info("Matches loaded from DB")
+
+async def save_match(match_id):
+    match = MATCHES[match_id]
+    await db.matches.update_one(
+        {"match_id": match_id},
+        {"$set": match},
+        upsert=True,
+    )
+
+async def delete_match(match_id):
+    await db.matches.delete_one({"match_id": match_id})
 
 def ensure_user(user):
     if user.id not in USERS:
         USERS[user.id] = {
+            "user_id": user.id,
             "name": get_username(user),
             "coins": 0,
             "wins": 0,
@@ -46,7 +87,7 @@ def ensure_user(user):
             "registered": False,
             "last_daily": None,
         }
-
+        USER_MATCHES[user.id] = set()
 
 def profile_text(user_id):
     u = USERS[user_id]
@@ -60,30 +101,25 @@ def profile_text(user_id):
         f"Loss : {u['losses']}\n"
     )
 
-
-def number_buttons():
-    # Кнопки с числами 1-3 и 4-6 (2 ряда)
+def number_buttons(match_id):
     buttons = [
-        [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 4)],
-        [InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(4, 7)],
+        [InlineKeyboardButton(str(i), callback_data=f"num_{i}_{match_id}") for i in range(1, 4)],
+        [InlineKeyboardButton(str(i), callback_data=f"num_{i}_{match_id}") for i in range(4, 7)],
     ]
     return InlineKeyboardMarkup(buttons)
 
+def join_button(match_id):
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Join", callback_data=f"join_match_{match_id}")]])
 
-def join_button():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Join", callback_data="join_match")]])
-
-
-def bat_bowl_buttons():
+def bat_bowl_buttons(match_id):
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Bat 🏏", callback_data="choose_bat"),
-                InlineKeyboardButton("Bowl ⚾", callback_data="choose_bowl"),
+                InlineKeyboardButton("Bat 🏏", callback_data=f"choose_bat_{match_id}"),
+                InlineKeyboardButton("Bowl ⚾", callback_data=f"choose_bowl_{match_id}"),
             ]
         ]
     )
-
 
 def leaderboard_buttons(page):
     if page == 0:
@@ -95,17 +131,15 @@ def leaderboard_buttons(page):
             [[InlineKeyboardButton("⬅️ Coins Leaderboard", callback_data="leaderboard_left")]]
         )
 
-
-# --- Команды бота ---
-
+# --- User Commands ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
+    await save_user(user.id)
     await update.message.reply_text(
         f"Welcome to {BOT_NAME}, {USERS[user.id]['name']}! Use /register to get 4000 {COINS_EMOJI}."
     )
-
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -116,15 +150,14 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     u["coins"] += 4000
     u["registered"] = True
+    await save_user(user.id)
     await update.message.reply_text(f"Registered! You received 4000 {COINS_EMOJI}.")
-
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
     text = profile_text(user.id)
     await update.message.reply_text(text)
-
 
 async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -138,8 +171,8 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     USERS[user.id]["coins"] += 2000
     USERS[user.id]["last_daily"] = now
+    await save_user(user.id)
     await update.message.reply_text(f"You received 2000 {COINS_EMOJI} as daily reward!")
-
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
@@ -152,7 +185,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
-
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
@@ -160,7 +192,6 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = leaderboard_text(0)
     markup = leaderboard_buttons(0)
     await update.message.reply_text(text, reply_markup=markup)
-
 
 def leaderboard_text(page):
     top = 10
@@ -176,7 +207,6 @@ def leaderboard_text(page):
             text += f"{i}. {u['name']} - {u['wins']} Wins\n"
     return text
 
-
 async def leaderboard_pagination(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
@@ -190,7 +220,6 @@ async def leaderboard_pagination(update: Update, context: ContextTypes.DEFAULT_T
     text = leaderboard_text(page)
     markup = leaderboard_buttons(page)
     await query.edit_message_text(text=text, reply_markup=markup)
-
 
 async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -211,22 +240,16 @@ async def add_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("User not found.")
         return
     USERS[target_id]["coins"] += amount
+    await save_user(target_id)
     await update.message.reply_text(
         f"Added {amount}{COINS_EMOJI} to {USERS[target_id]['name']}."
     )
-
-
-# --- Логика матча ---
-
+# --- Match Commands and Logic ---
 
 async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_id = update.effective_chat.id
     ensure_user(user)
-
-    if chat_id in MATCHES:
-        await update.message.reply_text("A match is already ongoing here. Wait it to finish.")
-        return
 
     bet = 0
     if context.args:
@@ -242,8 +265,13 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"You don't have enough coins to bet {bet}{COINS_EMOJI}.")
         return
 
-    # Создаем матч
-    MATCHES[chat_id] = {
+    # Create unique match ID
+    match_id = str(uuid.uuid4())
+
+    # Initialize match data
+    MATCHES[match_id] = {
+        "match_id": match_id,
+        "chat_id": chat_id,
         "players": [user.id],
         "inviter": user.id,
         "state": "waiting_join",
@@ -255,30 +283,43 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "bowler_choice": None,
         "batting_first": None,
         "toss_winner": None,
+        "toss_loser": None,
+        "batting_player": None,
+        "bowling_player": None,
         "turn": None,
         "innings": 0,
         "target": None,
         "superball": False,
     }
 
+    # Track match for user
+    USER_MATCHES.setdefault(user.id, set()).add(match_id)
+
+    await save_match(match_id)
+
     text = (
         f"🏏 Cricket game has been started!\n"
-        f"Press Join below to play with {USERS[user.id]['name']}."
+        f"Press Join below to play with {USERS[user.id]['name']}.\n"
+        f"Match ID: {match_id[:8]}"
     )
-    sent_message = await update.message.reply_text(text, reply_markup=join_button())
-    MATCHES[chat_id]["message_id"] = sent_message.message_id
+    sent_message = await update.message.reply_text(text, reply_markup=join_button(match_id))
+    MATCHES[match_id]["message_id"] = sent_message.message_id
+    await save_match(match_id)
 
 
 async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
-    chat_id = query.message.chat_id
 
-    if chat_id not in MATCHES:
-        await query.answer("No active match.", show_alert=True)
+    # Extract match_id from callback_data
+    data = query.data  # e.g., "join_match_<match_id>"
+    _, _, match_id = data.split("_", 2)
+
+    if match_id not in MATCHES:
+        await query.answer("No active match with this ID.", show_alert=True)
         return
 
-    match = MATCHES[chat_id]
+    match = MATCHES[match_id]
 
     if match["state"] != "waiting_join":
         await query.answer("Match already started.", show_alert=True)
@@ -294,46 +335,49 @@ async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer(f"You don't have enough coins to join this bet ({bet}{COINS_EMOJI}).", show_alert=True)
         return
 
-    # Добавляем второго игрока
+    # Add player to match and track
     match["players"].append(user.id)
     match["scores"][user.id] = 0
+    USER_MATCHES.setdefault(user.id, set()).add(match_id)
 
-    # Снимаем ставки
+    # Deduct bet if any
     if bet > 0:
         USERS[match["inviter"]]["coins"] -= bet
         USERS[user.id]["coins"] -= bet
+        await save_user(match["inviter"])
+        await save_user(user.id)
 
     match["state"] = "toss"
-    match["message_id"] = query.message.message_id
+    await save_match(match_id)
 
     await query.answer("You joined the match! Starting toss...")
     await start_toss(update, context, match, query.message)
 
 
 async def start_toss(update, context, match, message):
+    match_id = match["match_id"]
     inviter_name = USERS[match["inviter"]]["name"]
     keyboard = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Heads", callback_data="toss_heads"),
-                InlineKeyboardButton("Tails", callback_data="toss_tails"),
+                InlineKeyboardButton("Heads", callback_data=f"toss_heads_{match_id}"),
+                InlineKeyboardButton("Tails", callback_data=f"toss_tails_{match_id}"),
             ]
         ]
     )
     text = f"Coin toss time!\n{inviter_name}, choose Heads or Tails to win the toss."
     await message.edit_text(text, reply_markup=keyboard)
-
-
 async def toss_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
-    chat_id = query.message.chat_id
+    data = query.data  # e.g., "toss_heads_<match_id>"
+    _, choice, match_id = data.split("_", 2)
 
-    if chat_id not in MATCHES:
+    if match_id not in MATCHES:
         await query.answer("No active match.", show_alert=True)
         return
 
-    match = MATCHES[chat_id]
+    match = MATCHES[match_id]
 
     if match["state"] != "toss":
         await query.answer("Not in toss phase.", show_alert=True)
@@ -343,7 +387,6 @@ async def toss_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer("Only the match inviter can choose toss.", show_alert=True)
         return
 
-    choice = query.data.split("_")[1]
     coin_flip = random.choice(["heads", "tails"])
 
     if choice == coin_flip:
@@ -356,22 +399,23 @@ async def toss_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     match["toss_winner"] = toss_winner
     match["toss_loser"] = toss_loser
     match["state"] = "bat_bowl"
+    await save_match(match_id)
 
     text = f"{USERS[toss_winner]['name']} won the toss!\n\n{USERS[toss_winner]['name']}, choose to Bat or Bowl first."
-    await query.message.edit_text(text, reply_markup=bat_bowl_buttons())
+    await query.message.edit_text(text, reply_markup=bat_bowl_buttons(match_id))
     await query.answer()
-
 
 async def bat_bowl_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
-    chat_id = query.message.chat_id
+    data = query.data  # e.g., "choose_bat_<match_id>"
+    _, choice, match_id = data.split("_", 2)
 
-    if chat_id not in MATCHES:
+    if match_id not in MATCHES:
         await query.answer("No active match.", show_alert=True)
         return
 
-    match = MATCHES[chat_id]
+    match = MATCHES[match_id]
 
     if match["state"] != "bat_bowl":
         await query.answer("Not in Bat/Bowl choice phase.", show_alert=True)
@@ -381,7 +425,6 @@ async def bat_bowl_choice_callback(update: Update, context: ContextTypes.DEFAULT
         await query.answer("Only toss winner can choose.", show_alert=True)
         return
 
-    choice = query.data.split("_")[1]
     batting_first = choice == "bat"
     match["batting_first"] = batting_first
 
@@ -401,6 +444,7 @@ async def bat_bowl_choice_callback(update: Update, context: ContextTypes.DEFAULT
     match["innings"] = 1
     match["target"] = None
     match["superball"] = False
+    await save_match(match_id)
 
     text = (
         f"Match started!\n\n"
@@ -409,21 +453,20 @@ async def bat_bowl_choice_callback(update: Update, context: ContextTypes.DEFAULT
         f"⚾ Bowler: {USERS[match['bowling_player']]['name']}\n\n"
         f"{USERS[match['batting_player']]['name']}, choose your number to bat."
     )
-    await query.message.edit_text(text, reply_markup=number_buttons())
+    await query.message.edit_text(text, reply_markup=number_buttons(match_id))
     await query.answer()
-
 
 async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
-    chat_id = query.message.chat_id
-    data = query.data
+    data = query.data  # e.g., "num_4_<match_id>"
+    _, num_str, match_id = data.split("_", 2)
 
-    if chat_id not in MATCHES:
+    if match_id not in MATCHES:
         await query.answer("No active match.", show_alert=True)
         return
 
-    match = MATCHES[chat_id]
+    match = MATCHES[match_id]
 
     if match["state"] != "batting":
         await query.answer("Match not in batting phase.", show_alert=True)
@@ -434,7 +477,7 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     try:
-        number = int(data.split("_")[1])
+        number = int(num_str)
     except:
         await query.answer("Invalid number.", show_alert=True)
         return
@@ -443,7 +486,7 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("Choose a number between 1 and 6.", show_alert=True)
         return
 
-    # Ход бэтсмена
+    # Batsman's turn
     if match["turn"] == "batsman":
         if user.id != match["batting_player"]:
             await query.answer("It's batsman's turn.", show_alert=True)
@@ -457,11 +500,12 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.edit_text(
             f"{USERS[match['batting_player']]['name']} chose the number.\n"
             f"Now {USERS[match['bowling_player']]['name']}, choose your bowling number.",
-            reply_markup=number_buttons(),
+            reply_markup=number_buttons(match_id),
         )
+        await save_match(match_id)
         return
 
-    # Ход боулера
+    # Bowler's turn
     if match["turn"] == "bowler":
         if user.id != match["bowling_player"]:
             await query.answer("It's bowler's turn.", show_alert=True)
@@ -480,8 +524,7 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
         wickets = match["wickets"]
         scores = match["scores"]
 
-        # Обновляем овер
-        # Добавляем 0.1 к оверу - 6 мячей в овер (0.6)
+        # Update over count (simple increment logic)
         decimal = round((over * 10) % 10)
         if decimal < 5:
             match["over"] += 0.1
@@ -497,18 +540,17 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
         )
 
         if b_choice == bw_choice:
-            # Вылет
+            # Wicket
             match["wickets"] += 1
             text += f"Wicket! {USERS[batsman]['name']} is OUT!\n"
             if match["wickets"] >= 1:
-                # Ваша логика: 1 wicket - innings over
+                # End innings
                 if match["innings"] == 1:
-                    # Первый иннинг окончен
                     match["target"] = scores[batsman] + 1
                     match["innings"] = 2
                     match["wickets"] = 0
                     match["over"] = 0.0
-                    # Меняем роли
+                    # Swap roles
                     match["batting_player"], match["bowling_player"] = (
                         match["bowling_player"],
                         match["batting_player"],
@@ -517,6 +559,7 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
                     match["bowler_choice"] = None
                     match["turn"] = "batsman"
                     match["state"] = "batting"
+                    await save_match(match_id)
 
                     text += (
                         f"Over : {match['over']:.1f}\n\n"
@@ -525,28 +568,29 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
                         f"Target : {match['target']}\n\n"
                         f"{USERS[match['batting_player']]['name']}, choose your number to bat."
                     )
-                    await query.message.edit_text(text, reply_markup=number_buttons())
+                    await query.message.edit_text(text, reply_markup=number_buttons(match_id))
                     await query.answer()
                     return
                 else:
-                    # Второй иннинг окончен - матч завершён
+                    # Match finished
                     await finish_match(update, context, match, text)
                     return
             else:
-                # Продолжаем иннинг
+                # Continue innings
                 match["batsman_choice"] = None
                 match["bowler_choice"] = None
                 match["turn"] = "batsman"
-                text += f"\n{USERS[batsman]['name']} выберите число для удара."
-                await query.message.edit_text(text, reply_markup=number_buttons())
+                await save_match(match_id)
+                text += f"\n{USERS[batsman]['name']} choose your number to bat."
+                await query.message.edit_text(text, reply_markup=number_buttons(match_id))
                 await query.answer()
                 return
         else:
-            # Добавляем очки
+            # Add runs
             scores[batsman] += b_choice
             text += f"Total Score :\n{USERS[batsman]['name']} scored total of {scores[batsman]} Runs\n\n"
 
-            # Проверяем цель во втором иннинге
+            # Check target in 2nd innings
             if match["innings"] == 2 and scores[batsman] >= match["target"]:
                 text += f"Target achieved! {USERS[batsman]['name']} wins!\n"
                 await finish_match(update, context, match, text)
@@ -555,20 +599,20 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
             match["batsman_choice"] = None
             match["bowler_choice"] = None
             match["turn"] = "batsman"
+            await save_match(match_id)
 
             text += f"Next Move :\n{USERS[batsman]['name']} Continue your Bat!"
-            await query.message.edit_text(text, reply_markup=number_buttons())
+            await query.message.edit_text(text, reply_markup=number_buttons(match_id))
             await query.answer()
             return
 
 
 async def finish_match(update, context, match, text):
-    chat_id = update.effective_chat.id
+    chat_id = match["chat_id"]
     scores = match["scores"]
     players = match["players"]
     bet = match["bet"]
 
-    # Определяем победителя
     p1_score = scores[players[0]]
     p2_score = scores[players[1]]
 
@@ -579,15 +623,8 @@ async def finish_match(update, context, match, text):
         winner = players[1]
         loser = players[0]
     else:
-        # Ничья -> супербол
-        match["state"] = "superball"
-        match["superball"] = True
-        match["batsman_choice"] = None
-        match["bowler_choice"] = None
-        match["turn"] = "batsman"
-        text += "\nMatch tied! Starting Superball - one ball to decide winner.\n"
-        text += f"{USERS[match['batting_player']]['name']} bat first, choose your number."
-        await update.message.reply_text(text, reply_markup=number_buttons())
+        # Tie -> superball (optional, can implement later)
+        await update.callback_query.message.reply_text("Match tied! Superball not implemented yet.")
         return
 
     USERS[winner]["wins"] += 1
@@ -596,21 +633,28 @@ async def finish_match(update, context, match, text):
     if bet > 0:
         USERS[winner]["coins"] += bet * 2
 
+    await save_user(winner)
+    await save_user(loser)
+
     text += f"\n\nMatch Over!\nWinner: {USERS[winner]['name']} 🏆"
     await update.callback_query.message.edit_text(text)
 
-    if chat_id in MATCHES:
-        del MATCHES[chat_id]
+    # Cleanup
+    match_id = match["match_id"]
+    del MATCHES[match_id]
+    for pid in players:
+        USER_MATCHES[pid].discard(match_id)
+        await save_user(pid)
+    await delete_match(match_id)
 
-
-# --- Основная функция ---
-
+# --- Main function ---
 
 def main():
-    TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Замените на токен вашего бота
+    TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your bot token
 
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Command Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("daily", daily))
@@ -619,11 +663,19 @@ def main():
     app.add_handler(CommandHandler("add", add_coins))
     app.add_handler(CommandHandler("pm", pm_command))
 
-    app.add_handler(CallbackQueryHandler(join_match_callback, pattern="^join_match$"))
-    app.add_handler(CallbackQueryHandler(toss_choice_callback, pattern="^toss_"))
-    app.add_handler(CallbackQueryHandler(bat_bowl_choice_callback, pattern="^choose_"))
-    app.add_handler(CallbackQueryHandler(number_choice_callback, pattern="^num_"))
-    app.add_handler(CallbackQueryHandler(leaderboard_pagination, pattern="^leaderboard_"))
+    # Callback Handlers
+    app.add_handler(CallbackQueryHandler(join_match_callback, pattern=r"^join_match_"))
+    app.add_handler(CallbackQueryHandler(toss_choice_callback, pattern=r"^toss_"))
+    app.add_handler(CallbackQueryHandler(bat_bowl_choice_callback, pattern=r"^choose_"))
+    app.add_handler(CallbackQueryHandler(number_choice_callback, pattern=r"^num_"))
+    app.add_handler(CallbackQueryHandler(leaderboard_pagination, pattern=r"^leaderboard_"))
+
+    async def on_startup(app):
+        await load_users()
+        await load_matches()
+        logger.info("Bot started and data loaded")
+
+    app.post_init = on_startup
 
     print("Bot is running...")
     app.run_polling()
