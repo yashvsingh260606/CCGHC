@@ -1,12 +1,14 @@
 import logging
 import random
 import uuid
+import os
 from datetime import datetime, timedelta
 
 from telegram import (
     Update,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    BotCommand,
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -28,8 +30,15 @@ BOT_NAME = "CCG HandCricket"
 COINS_EMOJI = "🪙"
 ADMIN_IDS = {7361215114}  # Replace with your Telegram admin IDs
 
+# --- Environment Variables ---
+TOKEN = os.environ.get("BOT_TOKEN")  # Set this in Railway or your env
+MONGO_URL = os.environ.get("MONGO_URL")  # Set this in Railway or your env
+
+if not TOKEN or not MONGO_URL:
+    logger.error("BOT_TOKEN and MONGO_URL must be set in environment variables")
+    exit(1)
+
 # --- MongoDB Setup ---
-MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB URL
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket  # Database name
 
@@ -647,15 +656,29 @@ async def finish_match(update, context, match, text):
         await save_user(pid)
     await delete_match(match_id)
 
+# --- Register commands with Telegram for autocomplete ---
+
+async def set_bot_commands(application):
+    commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("register", "Register and get coins"),
+        BotCommand("pm", "Start a match with optional bet"),
+        BotCommand("profile", "Show your profile"),
+        BotCommand("daily", "Get daily 2000 🪙 reward"),
+        BotCommand("leaderboard", "Show leaderboard"),
+        BotCommand("help", "Show help message"),
+        BotCommand("add", "Add coins to user (admin only)"),
+    ]
+    await application.bot.set_my_commands(commands)
+
 # --- Main function ---
 
 def main():
-    TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your bot token
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     # Command Handlers
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("register", register))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("daily", daily))
     app.add_handler(CommandHandler("help", help_command))
@@ -673,6 +696,7 @@ def main():
     async def on_startup(app):
         await load_users()
         await load_matches()
+        await set_bot_commands(app)
         logger.info("Bot started and data loaded")
 
     app.post_init = on_startup
