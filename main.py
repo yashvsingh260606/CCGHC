@@ -31,7 +31,7 @@ ADMIN_IDS = {7361215114}  # Replace with your Telegram admin IDs
 
 # --- Bot Token and MongoDB URL ---
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your Telegram bot token
-MONGO_URL = "YOUR_MONGODB_CONNECTION_STRING_HERE"  # Replace with your MongoDB connection string
+MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB connection string
 
 # --- MongoDB Setup ---
 mongo_client = AsyncIOMotorClient(MONGO_URL)
