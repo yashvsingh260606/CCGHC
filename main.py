@@ -157,7 +157,11 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.datetime.utcnow()
     last_daily = user_data.get("last_daily")
     if last_daily:
-        last_daily_dt = last_daily if isinstance(last_daily, datetime.datetime) else datetime.datetime.strptime(last_daily, "%Y-%m-%dT%H:%M:%S.%f")
+        last_daily_dt = (
+            last_daily
+            if isinstance(last_daily, datetime.datetime)
+            else datetime.datetime.strptime(last_daily, "%Y-%m-%dT%H:%M:%S.%f")
+        )
         diff = (now - last_daily_dt).total_seconds()
         if diff < 86400:
             await update.message.reply_text(
@@ -317,19 +321,19 @@ def update_user_losses(user_id: int):
 # ------------------------------
 
 async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start a new match with optional bet"""
-    chat: Chat = update.effective_chat
+    chat = update.effective_chat
     user = update.effective_user
+
+    # Проверка, что команда только в группе
     if chat.type == "private":
-        await update.message.reply_text("❗ This command works only in groups.")
+        await update.message.reply_text("❗ /pm command works only in groups.")
         return
 
+    # Проверяем, что пользователь зарегистрирован
     await ensure_user(user)
     user_data = users_col.find_one({"user_id": user.id})
     if not user_data.get("registered", False):
-        await update.message.reply_text(
-            "You must register first with /register to play."
-        )
+        await update.message.reply_text("❌ You must register first with /register.")
         return
 
     bet = 0
@@ -341,9 +345,26 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # Allow multiple matches per user and group
+    # Проверяем сколько активных матчей у пользователя в этом чате (не более 3)
+    active_matches = list(
+        matches_col.find(
+            {
+                "players": user.id,
+                "chat_id": chat.id,
+                "state": {"$ne": "ended"},
+            }
+        )
+    )
+    if len(active_matches) >= 3:
+        await update.message.reply_text(
+            "❌ You already have 3 active matches in this group. Finish some before starting new."
+        )
+        return
+
+    # Создаём уникальный match_id
     match_id = f"{chat.id}_{user.id}_{random.randint(1000,9999)}"
-    match = {
+
+    match_doc = {
         "match_id": match_id,
         "chat_id": chat.id,
         "players": [user.id],
@@ -352,6 +373,7 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "initiator": user.id,
         "scores": {user.id: 0},
         "wickets": {user.id: 0},
+        "balls_faced": {user.id: 0},
         "current_over": 0.0,
         "batter": None,
         "bowler": None,
@@ -362,11 +384,16 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "target": None,
         "superball": False,
         "superball_choices": {},
-        "balls_faced": {user.id: 0},
     }
-    matches_col.insert_one(match)
 
-    join_keyboard = create_join_button(match_id)
+    try:
+        matches_col.insert_one(match_doc)
+    except Exception as e:
+        logger.error(f"Error inserting match: {e}")
+        await update.message.reply_text("❌ Failed to create match. Try again later.")
+        return
+
+    keyboard = create_join_button(match_id)
     bet_text = f"Bet: {bet} {COINS_EMOJI}" if bet > 0 else "No bet"
     msg = (
         f"{BAT_EMOJI} **Cricket game started!**\n\n"
@@ -374,7 +401,7 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{bet_text}\n\n"
         f"Press *Join* below to play!"
     )
-    await update.message.reply_text(msg, reply_markup=join_keyboard, parse_mode="Markdown")
+    await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
 
 
 async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -564,7 +591,7 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     # Find active match where user is playing and expecting input
     match = None
-    # We try to find the match by chat id and user
+    # We try to
     chat_id = query.message.chat_id
     active_matches = list(
         matches_col.find(
@@ -820,3 +847,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+            
