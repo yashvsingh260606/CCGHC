@@ -1,7 +1,6 @@
 import logging
 import random
 import uuid
-import os
 from datetime import datetime, timedelta
 
 from telegram import (
@@ -30,13 +29,9 @@ BOT_NAME = "CCG HandCricket"
 COINS_EMOJI = "🪙"
 ADMIN_IDS = {7361215114}  # Replace with your Telegram admin IDs
 
-# --- Environment Variables ---
-TOKEN = os.environ.get("BOT_TOKEN")  # Set this in Railway or your env
-MONGO_URL = os.environ.get("MONGO_URL")  # Set this in Railway or your env
-
-if not TOKEN or not MONGO_URL:
-    logger.error("BOT_TOKEN and MONGO_URL must be set in environment variables")
-    exit(1)
+# --- Declare your Bot Token and MongoDB URL here ---
+TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your Telegram bot token
+MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB connection URL
 
 # --- MongoDB Setup ---
 mongo_client = AsyncIOMotorClient(MONGO_URL)
@@ -617,7 +612,6 @@ async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def finish_match(update, context, match, text):
-    chat_id = match["chat_id"]
     scores = match["scores"]
     players = match["players"]
     bet = match["bet"]
@@ -632,7 +626,7 @@ async def finish_match(update, context, match, text):
         winner = players[1]
         loser = players[0]
     else:
-        # Tie -> superball (optional, can implement later)
+        # Tie -> superball (optional)
         await update.callback_query.message.reply_text("Match tied! Superball not implemented yet.")
         return
 
