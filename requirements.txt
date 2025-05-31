@@ -1,3 +1,2 @@
-python-telegram-bot>=20.0
-nest-asyncio
-# ...any other dependencies...
+python-telegram-bot==20.7
+pymongo[srv]
