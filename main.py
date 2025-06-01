@@ -2,6 +2,7 @@ import logging
 import random
 import uuid
 from datetime import datetime, timedelta
+import os
 
 from telegram import (
     Update,
@@ -30,11 +31,11 @@ BOT_NAME = "CCG HandCricket"
 COINS_EMOJI = "🪙"
 ADMIN_IDS = {7361215114}  # Replace with your Telegram admin IDs
 
-# Bot token and MongoDB URL
+# Hardcoded tokens (replace with your actual tokens)
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 
-# MongoDB setup
+# MongoDB setup (async Motor client)
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
 users_collection = db.users
@@ -657,4 +658,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                   
+    
