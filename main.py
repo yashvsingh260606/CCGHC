@@ -20,7 +20,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 # Logging setup
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -52,11 +53,13 @@ def get_username(user):
 async def load_users():
     cursor = users_collection.find({})
     async for user in cursor:
-        if "user_id" not in user:
+        user_id = user.get("user_id") or user.get("_id")
+        if not user_id:
             logger.warning(f"Skipping user document without user_id: {user}")
             continue
-        USERS[user["user_id"]] = user
-        USER_MATCHES[user["user_id"]] = set(user.get("active_matches", []))
+        user["user_id"] = user_id
+        USERS[user_id] = user
+        USER_MATCHES[user_id] = set(user.get("active_matches", []))
     logger.info("Users loaded")
 
 async def save_user(user_id):
@@ -258,6 +261,7 @@ async def leaderboard_pagination(update: Update, context: ContextTypes.DEFAULT_T
         parse_mode="Markdown"
     )
 async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"/pm command triggered by user {update.effective_user.id}")
     user = update.effective_user
     ensure_user(user)
     chat_id = update.effective_chat.id
@@ -313,6 +317,7 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await save_match(match_id)
 
 async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Join button clicked by user {update.effective_user.id}")
     query = update.callback_query
     user = update.effective_user
     data = query.data
@@ -652,4 +657,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                
+                   
