@@ -27,30 +27,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Replace with your actual token and admin IDs
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 ADMIN_IDS = {7361215114}
 
-# MongoDB setup
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
 users_collection = db.users
 matches_collection = db.matches
 
-# In-memory caches
 USERS = {}
-USER_PM_MATCHES = {}   # user_id -> set of pm match_ids
-GROUP_PM_MATCHES = {}  # group_id -> set of pm match_ids
-PM_MATCHES = {}        # pm match_id -> match dict
+USER_PM_MATCHES = {}
+GROUP_PM_MATCHES = {}
+PM_MATCHES = {}
 
-USER_CCL_MATCH = {}    # user_id -> ccl match_id or None
-GROUP_CCL_MATCH = {}   # group_id -> ccl match_id or None
-CCL_MATCHES = {}       # ccl match_id -> match dict
+USER_CCL_MATCH = {}
+GROUP_CCL_MATCH = {}
+CCL_MATCHES = {}
 
 LEADERBOARD_PAGE = {}
 
-# Emoji and placeholders
 COINS_EMOJI = "🪙"
 RUN_GIFS = {
     "0": None,
@@ -58,7 +54,6 @@ RUN_GIFS = {
     "6": None,
 }
 
-# Commentary data
 BOWLING_COMMENTARY = {
     "rs": "🎯 Rs...",
     "bouncer": "🔥 Bouncer...",
@@ -146,7 +141,6 @@ async def load_matches():
             if "match_id" not in match:
                 logger.warning(f"Skipping match without match_id: {match}")
                 continue
-            # For simplicity, load all into PM_MATCHES; adjust if needed
             PM_MATCHES[match["match_id"]] = match
         logger.info("Matches loaded successfully.")
     except Exception as e:
@@ -219,7 +213,7 @@ def leaderboard_buttons(page):
     else:
         return InlineKeyboardMarkup(
             [[InlineKeyboardButton("⬅️ Wins Leaderboard", callback_data="leaderboard_left")]]
-        )
+    )
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
@@ -517,7 +511,6 @@ async def pm_batnum_choice_callback(update: Update, context: ContextTypes.DEFAUL
         _, _, num = query.data.split("_", 2)
         num = int(num)
 
-        # Find match where user is batting and waiting for bat choice
         match = None
         for m in PM_MATCHES.values():
             if m["state"] == "batting" and m.get("batting_user") == user.id and m["current_batsman_choice"] is None:
@@ -568,7 +561,6 @@ async def pm_bowltype_choice_callback(update: Update, context: ContextTypes.DEFA
         user = update.effective_user
         _, _, bowl_type = query.data.split("_", 2)
 
-        # Find match where user is bowling and waiting for bowl choice
         match = None
         for m in PM_MATCHES.values():
             if m["state"] == "batting" and m.get("bowling_user") == user.id and m["current_bowler_choice"] is None:
@@ -839,6 +831,7 @@ VALID_BOWL_CHOICES = {"rs", "bouncer", "yorker", "short", "slower", "knuckle"}
 async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text.strip().lower()
+    logger.info(f"Received DM from {user.id}: {text}")
 
     match = None
     for m in CCL_MATCHES.values():
