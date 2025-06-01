@@ -18,41 +18,43 @@ from telegram.ext import (
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# --- Logging ---
+# Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# --- Constants ---
+# Constants
 BOT_NAME = "CCG HandCricket"
 COINS_EMOJI = "🪙"
 ADMIN_IDS = {7361215114}  # Replace with your Telegram admin IDs
 
-# --- Bot Token and MongoDB URL ---
-TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your Telegram bot token
-MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB connection string
+# Bot token and MongoDB URL
+TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
+MONGO_URL = "YOUR_MONGODB_CONNECTION_STRING_HERE"
 
-# --- MongoDB Setup ---
+# MongoDB setup
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
 users_collection = db.users
 matches_collection = db.matches
 
-# --- In-Memory Caches ---
+# In-memory caches
 USERS = {}
 MATCHES = {}
 USER_MATCHES = {}
 LEADERBOARD_PAGE = {}
 
-# --- Helper Functions ---
-
+# Helper functions
 def get_username(user):
     return user.first_name or user.username or "Player"
 
 async def load_users():
     cursor = users_collection.find({})
     async for user in cursor:
+        if "user_id" not in user:
+            logger.warning(f"Skipping user document without user_id: {user}")
+            continue
         USERS[user["user_id"]] = user
         USER_MATCHES[user["user_id"]] = set(user.get("active_matches", []))
     logger.info("Users loaded")
@@ -68,6 +70,9 @@ async def save_user(user_id):
 async def load_matches():
     cursor = matches_collection.find({})
     async for match in cursor:
+        if "match_id" not in match:
+            logger.warning(f"Skipping match document without match_id: {match}")
+            continue
         MATCHES[match["match_id"]] = match
     logger.info("Matches loaded")
 
@@ -150,7 +155,7 @@ def bat_bowl_buttons(match_id):
                 InlineKeyboardButton("Bowl ⚾", callback_data=f"choose_bowl_{match_id}"),
             ]
         ]
-    )
+            )
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
@@ -355,8 +360,6 @@ async def join_match_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     await query.answer()
 
-# Toss choice, bat/bowl choice, batting number choice, and finish match handlers go here...
-# Due to length, please ask if you'd like me to send the full gameplay handlers (Part 4).
 async def toss_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
@@ -604,50 +607,5 @@ async def finish_match(update, context, match, text):
         await save_user(pid)
     await delete_match(match_id)
 
-async def set_bot_commands(application):
-    commands = [
-        BotCommand("start", "Start the bot"),
-        BotCommand("register", "Register and get coins"),
-        BotCommand("pm", "Start a match with optional bet"),
-        BotCommand("profile", "Show your profile"),
-        BotCommand("daily", "Get daily 2000 🪙 reward"),
-        BotCommand("leaderboard", "Show leaderboard"),
-        BotCommand("help", "Show help message"),
-        BotCommand("add", "Add coins to user (admin only)"),
-    ]
-    await application.bot.set_my_commands(commands)
-
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # Command handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("register", register))
-    app.add_handler(CommandHandler("profile", profile))
-    app.add_handler(CommandHandler("daily", daily))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("leaderboard", leaderboard))
-    app.add_handler(CommandHandler("add", add_coins))
-    app.add_handler(CommandHandler("pm", pm_command))
-
-    # Callback query handlers
-    app.add_handler(CallbackQueryHandler(join_match_callback, pattern=r"^join_match_"))
-    app.add_handler(CallbackQueryHandler(toss_choice_callback, pattern=r"^toss_"))
-    app.add_handler(CallbackQueryHandler(bat_bowl_choice_callback, pattern=r"^choose_"))
-    app.add_handler(CallbackQueryHandler(number_choice_callback, pattern=r"^num_"))
-    app.add_handler(CallbackQueryHandler(leaderboard_pagination, pattern=r"^leaderboard_"))
-
-    async def on_startup(app):
-        await load_users()
-        await load_matches()
-        await set_bot_commands(app)
-        logger.info("Bot started and ready")
-
-    app.post_init = on_startup
-
-    print("Bot is running...")
-    app.run_polling()
-
 if __name__ == "__main__":
     main()
-            
