@@ -21,7 +21,6 @@ from telegram.ext import (
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# Logging setup
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -213,7 +212,7 @@ def leaderboard_buttons(page):
     else:
         return InlineKeyboardMarkup(
             [[InlineKeyboardButton("⬅️ Wins Leaderboard", callback_data="leaderboard_left")]]
-    )
+        )
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
@@ -421,6 +420,9 @@ async def pm_toss_choice_callback(update: Update, context: ContextTypes.DEFAULT_
             return
 
         match = PM_MATCHES[match_id]
+
+        logger.info(f"Toss choice by user {user.id}, initiator is {match['initiator']}, state is {match['state']}")
+
         if match["state"] != "toss":
             await query.answer("❌ Not in toss phase.", show_alert=True)
             return
@@ -752,6 +754,8 @@ async def ccl_toss_choice_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     match = CCL_MATCHES[match_id]
+
+    logger.info(f"CCL toss choice by user {user.id}, initiator is {match['initiator']}, state is {match['state']}")
 
     if match["state"] != "toss":
         await query.answer("Not in toss phase.", show_alert=True)
