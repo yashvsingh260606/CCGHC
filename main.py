@@ -155,7 +155,7 @@ def bat_bowl_buttons(match_id):
                 InlineKeyboardButton("Bowl ⚾", callback_data=f"choose_bowl_{match_id}"),
             ]
         ]
-            )
+    )
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
@@ -438,7 +438,6 @@ async def bat_bowl_choice_callback(update: Update, context: ContextTypes.DEFAULT
     )
     await query.message.edit_text(text, reply_markup=number_buttons(match_id), parse_mode="Markdown")
     await query.answer()
-
 async def number_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
@@ -607,5 +606,50 @@ async def finish_match(update, context, match, text):
         await save_user(pid)
     await delete_match(match_id)
 
+async def set_bot_commands(application):
+    commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("register", "Register and get coins"),
+        BotCommand("pm", "Start a match with optional bet"),
+        BotCommand("profile", "Show your profile"),
+        BotCommand("daily", "Get daily 2000 🪙 reward"),
+        BotCommand("leaderboard", "Show leaderboard"),
+        BotCommand("help", "Show help message"),
+        BotCommand("add", "Add coins to user (admin only)"),
+    ]
+    await application.bot.set_my_commands(commands)
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    # Command handlers
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("register", register))
+    app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("daily", daily))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("add", add_coins))
+    app.add_handler(CommandHandler("pm", pm_command))
+
+    # Callback query handlers
+    app.add_handler(CallbackQueryHandler(join_match_callback, pattern=r"^join_match_"))
+    app.add_handler(CallbackQueryHandler(toss_choice_callback, pattern=r"^toss_"))
+    app.add_handler(CallbackQueryHandler(bat_bowl_choice_callback, pattern=r"^choose_"))
+    app.add_handler(CallbackQueryHandler(number_choice_callback, pattern=r"^num_"))
+    app.add_handler(CallbackQueryHandler(leaderboard_pagination, pattern=r"^leaderboard_"))
+
+    async def on_startup(app):
+        await load_users()
+        await load_matches()
+        await set_bot_commands(app)
+        logger.info("Bot started and ready")
+
+    app.post_init = on_startup
+
+    print("Bot is running...")
+    app.run_polling()
+
 if __name__ == "__main__":
     main()
+                
