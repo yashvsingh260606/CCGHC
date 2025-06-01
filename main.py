@@ -8,7 +8,6 @@ from telegram import (
     Update,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    BotCommand,
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -45,24 +44,23 @@ CCL_MATCHES = {}
 
 COINS_EMOJI = "🪙"
 
-BOWLING_TYPE_TO_NUMBER = {
-    "rs": 0,
-    "bouncer": 1,
-    "yorker": 2,
-    "short": 3,
-    "slower": 4,
-    "knuckle": 5,
+BOWLING_TYPES = {"rs", "bouncer", "yorker", "short", "slower", "knuckle"}
+
+# GIF URLs for runs 0, 4, 6 and wickets (replace with your actual GIF URLs)
+RUN_GIFS = {
+    "0": "https://media.giphy.com/media/3o6ZtpxSZbQRRnwCKQ/giphy.gif",  # Dot ball GIF
+    "4": "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",  # Four GIF
+    "6": "https://media.giphy.com/media/3o7aD4j6z6l7b1kN2k/giphy.gif",  # Six GIF
+    "out": "https://media.giphy.com/media/3o7TKtnuHOHHUjR38Y/giphy.gif",  # Wicket GIF
 }
 
-NUMBER_TO_BOWLING_TYPE = {v: k for k, v in BOWLING_TYPE_TO_NUMBER.items()}
-
 BOWLING_COMMENTARY = {
-    "rs": ("🎯 Rs...", "GIF_URL_RS"),
-    "bouncer": ("🔥 Bouncer...", "GIF_URL_BOUNCER"),
-    "yorker": ("🎯 Yorker...", "GIF_URL_YORKER"),
-    "short": ("⚡ Short ball...", "GIF_URL_SHORT"),
-    "slower": ("🐢 Slower ball...", "GIF_URL_SLOWER"),
-    "knuckle": ("🤜 Knuckle ball...", "GIF_URL_KNUCKLE"),
+    "rs": "🎯 Rs...",
+    "bouncer": "🔥 Bouncer...",
+    "yorker": "🎯 Yorker...",
+    "short": "⚡ Short ball...",
+    "slower": "🐢 Slower ball...",
+    "knuckle": "🤜 Knuckle ball...",
 }
 
 RUN_COMMENTARY = {
@@ -207,98 +205,7 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await save_user(user.id)
     await update.message.reply_text(f"You received 2000 {COINS_EMOJI} as daily reward!", parse_mode="Markdown")
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    ensure_user(user)
-    sorted_users = sorted(USERS.values(), key=lambda u: u.get("coins", 0), reverse=True)
-    page = 1
-    if context.args and context.args[0].isdigit():
-        page = int(context.args[0])
-    total_pages = 2
-    text = ""
-    if page == 1:
-        text = "🏆 **Top 10 Richest Players by Coins:**\n\n"
-        sorted_list = sorted_users[:10]
-        for i, u in enumerate(sorted_list, 1):
-            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('coins', 0)} {COINS_EMOJI}\n"
-    else:
-        sorted_wins = sorted(USERS.values(), key=lambda u: u.get("wins", 0), reverse=True)
-        text = "🏆 **Top 10 Players by Wins:**\n\n"
-        for i, u in enumerate(sorted_wins[:10], 1):
-            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('wins', 0)} Wins\n"
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⬅️ Coins", callback_data=f"leaderboard_1"),
-            InlineKeyboardButton("Wins ➡️", callback_data=f"leaderboard_2"),
-        ]
-    ])
-    await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
-
-async def leaderboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    _, page = query.data.split("_")
-    page = int(page)
-    sorted_users = sorted(USERS.values(), key=lambda u: u.get("coins", 0), reverse=True)
-    total_pages = 2
-    text = ""
-    if page == 1:
-        text = "🏆 **Top 10 Richest Players by Coins:**\n\n"
-        sorted_list = sorted_users[:10]
-        for i, u in enumerate(sorted_list, 1):
-            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('coins', 0)} {COINS_EMOJI}\n"
-    else:
-        sorted_wins = sorted(USERS.values(), key=lambda u: u.get("wins", 0), reverse=True)
-        text = "🏆 **Top 10 Players by Wins:**\n\n"
-        for i, u in enumerate(sorted_wins[:10], 1):
-            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('wins', 0)} Wins\n"
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⬅️ Coins", callback_data=f"leaderboard_1"),
-            InlineKeyboardButton("Wins ➡️", callback_data=f"leaderboard_2"),
-        ]
-    ])
-    await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await query.answer()
-
-async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if user.id not in ADMIN_IDS:
-        await update.message.reply_text("You are not authorized to use this command.", parse_mode="Markdown")
-        return
-    args = context.args
-    if len(args) != 2:
-        await update.message.reply_text("Usage: /add <user_id> <amount>", parse_mode="Markdown")
-        return
-    try:
-        target_id = int(args[0])
-        amount = int(args[1])
-    except ValueError:
-        await update.message.reply_text("Please provide valid user_id and amount.", parse_mode="Markdown")
-        return
-    if target_id not in USERS:
-        await update.message.reply_text("User not found.", parse_mode="Markdown")
-        return
-    USERS[target_id]["coins"] += amount
-    await save_user(target_id)
-    await update.message.reply_text(
-        f"Added {amount}{COINS_EMOJI} to {USERS[target_id]['name']}.", parse_mode="Markdown"
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = (
-        "**CCG HandCricket Commands:**\n\n"
-        "/start - Start the bot\n"
-        "/register - Register and get 4000 🪙 coins\n"
-        "/pm [bet] - Start a PM match optionally with bet\n"
-        "/ccl - Start a CCL match\n"
-        "/profile - Show your profile\n"
-        "/daily - Claim daily 2000 🪙 coins\n"
-        "/leaderboard - Show leaderboard with coins and wins\n"
-        "/help - Show this help message\n"
-    )
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+# (Next parts will include PM and CCL mode handlers with all your requested logic)
 # PM Mode Keyboards
 
 def pm_join_cancel_keyboard(match_id):
@@ -690,7 +597,7 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
         chat_id=chat_id,
         text=f"{USERS[match['batting_user']]['name']}, choose your batting number:",
         reply_markup=pm_number_keyboard("pm_batnum"),
-    )
+        )
 # CCL Mode Keyboards
 
 def ccl_join_cancel_keyboard(match_id):
@@ -717,28 +624,6 @@ def ccl_bat_bowl_keyboard(match_id):
         ]]
     )
 
-def ccl_batting_keyboard():
-    buttons = [
-        [InlineKeyboardButton(str(n), callback_data=f"ccl_batnum_{n}") for n in [0, 1, 2]],
-        [InlineKeyboardButton(str(n), callback_data=f"ccl_batnum_{n}") for n in [3, 4, 6]],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-def ccl_bowling_keyboard():
-    types = ["rs", "bouncer", "yorker", "short", "slower", "knuckle"]
-    buttons = []
-    row = []
-    for i, t in enumerate(types, 1):
-        row.append(InlineKeyboardButton(t.capitalize(), callback_data=f"ccl_bowltype_{t}"))
-        if i % 3 == 0:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    return InlineKeyboardMarkup(buttons)
-
-# /ccl Command Handler
-
 async def ccl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -749,8 +634,8 @@ async def ccl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ensure_user(user)
 
-    # Check if user already in a CCL match in this group
-    for match_id in USER_CCL_MATCH.get(user.id, set()) if USER_CCL_MATCH.get(user.id) else []:
+    if USER_CCL_MATCH.get(user.id):
+        match_id = USER_CCL_MATCH[user.id]
         match = CCL_MATCHES.get(match_id)
         if match and match["group_chat_id"] == chat.id and match["state"] != "finished":
             await update.message.reply_text("You already have an active CCL match in this group.")
@@ -784,8 +669,6 @@ async def ccl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ccl_join_cancel_keyboard(match_id),
     )
 
-# Join Callback
-
 async def ccl_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
@@ -818,8 +701,6 @@ async def ccl_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.answer()
 
-# Cancel Callback
-
 async def ccl_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = update.effective_user
@@ -844,8 +725,6 @@ async def ccl_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.message.edit_text("The CCL match has been cancelled by the initiator.")
     await query.answer()
-
-# Toss Callback
 
 async def ccl_toss_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -875,8 +754,6 @@ async def ccl_toss_choice_callback(update: Update, context: ContextTypes.DEFAULT
         reply_markup=ccl_bat_bowl_keyboard(match_id),
     )
     await query.answer()
-
-# Bat/Bowl Choice Callback
 
 async def ccl_bat_bowl_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -911,7 +788,6 @@ async def ccl_bat_bowl_choice_callback(update: Update, context: ContextTypes.DEF
         "superball": False,
     })
 
-    # Tag batsman and bowler in group chat and prompt them to send choices in DM
     batting_mention = f"[{USERS[match['batting_user']]['name']}](tg://user?id={match['batting_user']})"
     bowling_mention = f"[{USERS[match['bowling_user']]['name']}](tg://user?id={match['bowling_user']})"
 
@@ -922,112 +798,73 @@ async def ccl_bat_bowl_choice_callback(update: Update, context: ContextTypes.DEF
         f"{batting_mention} and {bowling_mention}, please send your choices in DM to me.",
         parse_mode="Markdown",
     )
-    # Send DM to batsman
+
     try:
         await context.bot.send_message(
             chat_id=match["batting_user"],
-            text="Please choose your batting number:",
-            reply_markup=ccl_batting_keyboard(),
+            text="Please send your batting number (0,1,2,3,4,6):"
         )
     except:
         await query.message.reply_text(f"Cannot send DM to {batting_mention}. Please start a chat with me first.", parse_mode="Markdown")
-    # Send DM to bowler
+
     try:
         await context.bot.send_message(
             chat_id=match["bowling_user"],
-            text="Please choose your bowling type:",
-            reply_markup=ccl_bowling_keyboard(),
+            text="Please send your bowling type (rs, bouncer, yorker, short, slower, knuckle):"
         )
     except:
         await query.message.reply_text(f"Cannot send DM to {bowling_mention}. Please start a chat with me first.", parse_mode="Markdown")
 
     await query.answer()
 
-# DM Handlers for batsman and bowler choices
+# DM message handler for batsman and bowler inputs
 
-async def ccl_batnum_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    _, num_str = query.data.split("_", 2)
-    num = int(num_str)
+    text = update.message.text.strip().lower()
 
     match_id = USER_CCL_MATCH.get(user.id)
     if not match_id:
-        await query.answer("You are not in an active CCL match.", show_alert=True)
+        await update.message.reply_text("You are not currently in a CCL match.")
         return
 
     match = CCL_MATCHES.get(match_id)
-    if not match or match["state"] != "batting" or match["batting_user"] != user.id:
-        await query.answer("Not your turn to bat or invalid match state.", show_alert=True)
+    if not match or match["state"] != "batting":
+        await update.message.reply_text("Match is not in batting state.")
         return
 
-    if match["batsman_choice"] is not None:
-        await query.answer("You already chose your batting number.", show_alert=True)
-        return
-
-    match["batsman_choice"] = num
-    await query.answer(f"You chose {num} for batting.")
-
-    # Check if bowler has chosen
-    if match["bowler_choice"] is not None:
-        await process_ccl_ball(context, match)
+    if user.id == match["batting_user"]:
+        # Validate batsman input
+        if text not in {"0","1","2","3","4","6"}:
+            await update.message.reply_text("Invalid batting number. Please send one of 0,1,2,3,4,6.")
+            return
+        if match["batsman_choice"] is not None:
+            await update.message.reply_text("You have already sent your batting number for this ball.")
+            return
+        match["batsman_choice"] = int(text)
+        await update.message.reply_text(f"Batting number {text} received.")
+    elif user.id == match["bowling_user"]:
+        # Validate bowler input
+        if text not in BOWLING_TYPES:
+            await update.message.reply_text("Invalid bowling type. Please send one of rs, bouncer, yorker, short, slower, knuckle.")
+            return
+        if match["bowler_choice"] is not None:
+            await update.message.reply_text("You have already sent your bowling type for this ball.")
+            return
+        match["bowler_choice"] = text
+        await update.message.reply_text(f"Bowling type '{text}' received.")
     else:
-        # Prompt bowler to choose if not chosen yet
-        try:
-            await context.bot.send_message(
-                chat_id=match["bowling_user"],
-                text="Waiting for you to choose bowling type:",
-                reply_markup=ccl_bowling_keyboard(),
-            )
-        except:
-            pass
-
-async def ccl_bowltype_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user = update.effective_user
-    _, bowl_type = query.data.split("_", 2)
-
-    match_id = USER_CCL_MATCH.get(user.id)
-    if not match_id:
-        await query.answer("You are not in an active CCL match.", show_alert=True)
+        await update.message.reply_text("You are not a player in this match.")
         return
 
-    match = CCL_MATCHES.get(match_id)
-    if not match or match["state"] != "batting" or match["bowling_user"] != user.id:
-        await query.answer("Not your turn to bowl or invalid match state.", show_alert=True)
-        return
-
-    if match["bowler_choice"] is not None:
-        await query.answer("You already chose your bowling type.", show_alert=True)
-        return
-
-    if bowl_type not in BOWLING_TYPE_TO_NUMBER:
-        await query.answer("Invalid bowling type.", show_alert=True)
-        return
-
-    match["bowler_choice"] = bowl_type
-    await query.answer(f"You chose {bowl_type} for bowling.")
-
-    # Check if batsman has chosen
-    if match["batsman_choice"] is not None:
+    # If both choices received, process ball
+    if match["batsman_choice"] is not None and match["bowler_choice"] is not None:
         await process_ccl_ball(context, match)
-    else:
-        # Prompt batsman to choose if not chosen yet
-        try:
-            await context.bot.send_message(
-                chat_id=match["batting_user"],
-                text="Waiting for you to choose batting number:",
-                reply_markup=ccl_batting_keyboard(),
-            )
-        except:
-            pass
-
-# Process ball for CCL mode with suspense and delays
 
 async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
     chat_id = match["group_chat_id"]
     batsman_choice = match["batsman_choice"]
-    bowler_choice_type = match["bowler_choice"]
+    bowler_choice = match["bowler_choice"]
 
     match["balls"] += 1
     over_num = (match["balls"] - 1) // 6 + 1
@@ -1039,27 +876,32 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
     await context.bot.send_message(chat_id=chat_id, text=f"Ball {ball_num}")
     await asyncio.sleep(1)
 
-    # Bowling type message with GIF placeholder
-    bowling_text, bowling_gif = BOWLING_COMMENTARY.get(bowler_choice_type, ("", None))
-    await context.bot.send_message(chat_id=chat_id, text=f"{USERS[match['bowling_user']]['name']} Bowled A {bowler_choice_type.capitalize()}")
-    # Uncomment to send GIF if you have URLs
-    # if bowling_gif:
-    #     await context.bot.send_animation(chat_id=chat_id, animation=bowling_gif)
-    await asyncio.sleep(random.randint(5,7))  # suspense delay
+    # Bowling type message with suspense delay
+    bowling_text = BOWLING_COMMENTARY.get(bowler_choice, "")
+    await context.bot.send_message(chat_id=chat_id, text=f"{USERS[match['bowling_user']]['name']} Bowled A {bowler_choice.capitalize()}")
+    await asyncio.sleep(8)  # suspense delay
 
-    # Determine out or runs
-    is_out = batsman_choice == BOWLING_TYPE_TO_NUMBER.get(bowler_choice_type, -1)
+    await context.bot.send_message(chat_id=chat_id, text=bowling_text)
+    await asyncio.sleep(6)  # suspense delay
+
+    # Determine if wicket
+    is_out = (batsman_choice == BOWLING_TYPE_TO_NUMBER.get(bowler_choice, -1))
 
     if is_out:
         run_text = random.choice(RUN_COMMENTARY["out"])
         match["wickets"] += 1
         result_text = f"{run_text} It's Out! 💥"
+        gif_url = RUN_GIFS["out"]
     else:
         run_text = random.choice(RUN_COMMENTARY.get(str(batsman_choice), ["Runs scored!"]))
         match["score"] += batsman_choice
         result_text = f"{run_text} {batsman_choice} run(s) scored."
+        gif_url = RUN_GIFS.get(str(batsman_choice), None)
 
     await context.bot.send_message(chat_id=chat_id, text=result_text)
+    if gif_url:
+        await context.bot.send_animation(chat_id=chat_id, animation=gif_url)
+
     await asyncio.sleep(1)
 
     # Score update
@@ -1103,22 +945,18 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
         text=f"{batting_mention} and {bowling_mention}, please send your next choices in DM.",
         parse_mode="Markdown")
 
-    # Prompt batsman DM
     try:
         await context.bot.send_message(
             chat_id=match["batting_user"],
-            text="Choose your batting number:",
-            reply_markup=ccl_batting_keyboard(),
+            text="Please send your batting number (0,1,2,3,4,6):"
         )
     except:
         pass
 
-    # Prompt bowler DM
     try:
         await context.bot.send_message(
             chat_id=match["bowling_user"],
-            text="Choose your bowling type:",
-            reply_markup=ccl_bowling_keyboard(),
+            text="Please send your bowling type (rs, bouncer, yorker, short, slower, knuckle):"
         )
     except:
         pass
@@ -1153,8 +991,9 @@ def main():
     application.add_handler(CallbackQueryHandler(ccl_cancel_callback, pattern=r"^ccl_cancel_"))
     application.add_handler(CallbackQueryHandler(ccl_toss_choice_callback, pattern=r"^ccl_toss_"))
     application.add_handler(CallbackQueryHandler(ccl_bat_bowl_choice_callback, pattern=r"^ccl_bat_|^ccl_bowl_"))
-    application.add_handler(CallbackQueryHandler(ccl_batnum_choice_callback, pattern=r"^ccl_batnum_"))
-    application.add_handler(CallbackQueryHandler(ccl_bowltype_choice_callback, pattern=r"^ccl_bowltype_"))
+
+    # DM message handler for batsman and bowler choices in CCL mode
+    application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, ccl_dm_handler))
 
     # Unknown commands handler
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
@@ -1167,3 +1006,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
