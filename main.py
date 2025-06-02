@@ -53,7 +53,7 @@ BOWLING_TYPE_TO_NUMBER = {
 RUN_GIFS = {
     "0": "https://media.giphy.com/media/3o6ZtpxSZbQRRnwCKQ/giphy.gif",
     "4": "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
-    "6": "https://media.giphy.com/media/3o7aD4j6z6l7b1kN2k/giphy.gif",
+    "6": "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif?cid=6c09b952prhs19w0wpqa8uuafr0nsbq4mp6fbtleyxzzq7t8&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
     "out": "https://media.giphy.com/media/3o7TKtnuHOHHUjR38Y/giphy.gif",
 }
 
