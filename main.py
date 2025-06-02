@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 ADMIN_IDS = {123456789}  # Replace with your admin user IDs
 
-MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
+MONGO_URL = "8156231369:AAHDFvjD9Aur9y5QjB5YWzvCQp7bUdLuuEc"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
 users_collection = db.users
@@ -141,7 +141,7 @@ def profile_text(user_id):
         f"Losses: {losses}\n"
     )
 
-# Command Handlers
+# Basic Command Handlers
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -276,10 +276,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # PM Mode Keyboards
 
 def pm_number_keyboard(prefix):
-    # Buttons 1 to 6 individually
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(str(n), callback_data=f"{prefix}_{n}") for n in range(1, 7)]
-    ])
+    # Two rows: 1-3 and 4-6
+    buttons = [
+        [InlineKeyboardButton(str(n), callback_data=f"{prefix}_{n}") for n in range(1, 4)],
+        [InlineKeyboardButton(str(n), callback_data=f"{prefix}_{n}") for n in range(4, 7)],
+    ]
+    return InlineKeyboardMarkup(buttons)
 
 def pm_join_cancel_keyboard(match_id):
     return InlineKeyboardMarkup(
@@ -932,9 +934,6 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if current_match["batsman_choice"] is not None and current_match["bowler_choice"] is not None:
         await process_ccl_ball(context, current_match)
-
-# process_ccl_ball function is similar to pm version but adapted for CCL mode
-# (You can reuse the logic from Part 2 with variable renaming to current_match)
 async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
     chat_id = current_match["group_chat_id"]
     batsman_choice = current_match["batsman_choice"]
@@ -1043,6 +1042,7 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
         chat_id=chat_id,
         text=f"{USERS[current_match['bowling_user']]['name']}, please send your bowling number (1-6) in DM.",
     )
+
 async def endmatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -1129,4 +1129,4 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.create_task(main())
     loop.run_forever()
-    
+            
