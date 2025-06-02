@@ -1011,10 +1011,18 @@ async def endmatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("All ongoing CCL matches in this group have been ended by admin.")
 
-def main():
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Unknown command. Use /help to see available commands.")
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+async def main():
+    await load_users()
+
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Add command handlers
+    # Basic commands
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("register", register))
     application.add_handler(CommandHandler("profile", profile))
@@ -1039,18 +1047,21 @@ def main():
     application.add_handler(CallbackQueryHandler(ccl_cancel_callback, pattern=r"^ccl_cancel_"))
     application.add_handler(CallbackQueryHandler(ccl_toss_choice_callback, pattern=r"^ccl_toss_(heads|tails)_"))
     application.add_handler(CallbackQueryHandler(ccl_bat_bowl_choice_callback, pattern=r"^ccl_(bat|bowl)_"))
-    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Text(None), ccl_dm_handler))
+    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, ccl_dm_handler))
 
     # Admin command
     application.add_handler(CommandHandler("endmatch", endmatch))
 
-    # Handle unknown commands
-    application.add_handler(MessageHandler(filters.COMMAND, lambda update, context: update.message.reply_text("Unknown command. Use /help.")))
+    # Unknown commands handler
+    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+
+    # Error handler
+    application.add_error_handler(error_handler)
 
     logger.info("Bot started.")
-    application.run_polling()
+    await application.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(load_users())
-    main()
+    import asyncio
+    asyncio.run(main())
     
