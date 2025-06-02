@@ -4,6 +4,9 @@ import uuid
 import asyncio
 from datetime import datetime, timedelta
 
+import nest_asyncio
+nest_asyncio.apply()
+
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
@@ -21,14 +24,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Replace with your actual bot token and admin IDs
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
-ADMIN_IDS = {7361215114}  # Replace with your admin IDs
+ADMIN_IDS = {123456789}  # Replace with your admin user IDs
 
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
 users_collection = db.users
 
+# Data Structures
 USERS = {}
 USER_PM_MATCHES = {}
 GROUP_PM_MATCHES = {}
@@ -51,10 +56,10 @@ BOWLING_TYPE_TO_NUMBER = {
 }
 
 RUN_GIFS = {
-    "0": "https://media0.giphy.com/media/QtipHdYxYopX3W6vMs/giphy.gif?cid=6c09b952groh6oi1goel24j54cw15djlutk41v23sen8n12q&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
-    "4": "https://media0.giphy.com/media/3o7btXfjIjTcU64YdG/giphy.gif?cid=6c09b952stev1tvxjapt2c4wnlwrrp3j1ry8h7t3mb4yzp07&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
-    "6": "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif?cid=6c09b952r9ouknj0gxxy8c18x6ps8rsavpy5vrltk6ev0xic&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
-    "out": "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif?cid=6c09b9527jlo8j2nszagk48wv91hi5fdn3pe2m7x8e40b98n&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
+    "0": "https://media0.giphy.com/media/QtipHdYxYopX3W6vMs/giphy.gif",
+    "4": "https://media0.giphy.com/media/3o7btXfjIjTcU64YdG/giphy.gif",
+    "6": "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif",
+    "out": "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif",
 }
 
 BOWLING_COMMENTARY = {
@@ -134,6 +139,8 @@ def profile_text(user_id):
         f"Wins: {wins}\n"
         f"Losses: {losses}\n"
     )
+
+# Command Handlers
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1062,6 +1069,10 @@ async def main():
     await application.run_polling()
 
 if __name__ == "__main__":
+    import nest_asyncio
+    nest_asyncio.apply()
     import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    loop.run_forever()
     
