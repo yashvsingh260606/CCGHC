@@ -51,10 +51,10 @@ BOWLING_TYPE_TO_NUMBER = {
 }
 
 RUN_GIFS = {
-    "0": "https://media0.giphy.com/media/QtipHdYxYopX3W6vMs/giphy.gif?cid=6c09b952groh6oi1goel24j54cw15djlutk41v23sen8n12q&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
-    "4": "https://media0.giphy.com/media/3o7btXfjIjTcU64YdG/giphy.gif?cid=6c09b952stev1tvxjapt2c4wnlwrrp3j1ry8h7t3mb4yzp07&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
-    "6": "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif?cid=6c09b952r9ouknj0gxxy8c18x6ps8rsavpy5vrltk6ev0xic&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
-    "out": "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif?cid=6c09b9527jlo8j2nszagk48wv91hi5fdn3pe2m7x8e40b98n&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g",
+    "0": "https://media0.giphy.com/media/QtipHdYxYopX3W6vMs/giphy.gif",
+    "4": "https://media0.giphy.com/media/3o7btXfjIjTcU64YdG/giphy.gif",
+    "6": "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif",
+    "out": "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif",
 }
 
 BOWLING_COMMENTARY = {
@@ -67,75 +67,17 @@ BOWLING_COMMENTARY = {
 }
 
 RUN_COMMENTARY = {
-    "0": [
-        "🟢 Dot Ball!",
-        "😶 No run.",
-        "⏸️ Well bowled, no run.",
-    ],
-    "1": [
-        "🏃‍♂️ Quick single.",
-        "👟 One run taken.",
-        "➡️ They sneak a single.",
-    ],
-    "2": [
-        "🏃‍♂️🏃‍♂️ Two runs!",
-        "💨 Good running between the wickets.",
-        "↔️ They pick up a couple.",
-    ],
-    "3": [
-        "🏃‍♂️🏃‍♂️🏃‍♂️ Three runs!",
-        "🔥 Great running, three!",
-        "↔️ Three runs taken.",
-    ],
-    "4": [
-        "💥 He smashed a Four!",
-        "🏏 Beautiful boundary!",
-        "🚀 Cracking shot for four!",
-        "🎯 That's a maximum four!",
-    ],
-    "6": [
-        "🚀 He Smoked It For A Six!",
-        "💣 Maximum!",
-        "🔥 What a massive six!",
-        "🎉 Huge hit over the boundary!",
-    ],
-    "out": [
-        "❌ It's Out!",
-        "💥 Bowled him!",
-        "😱 What a wicket!",
-        "⚡ Caught behind!",
-    ],
+    "0": ["🟢 Dot Ball!", "😶 No run.", "⏸️ Well bowled, no run."],
+    "1": ["🏃‍♂️ Quick single.", "👟 One run taken.", "➡️ They sneak a single."],
+    "2": ["🏃‍♂️🏃‍♂️ Two runs!", "💨 Good running between the wickets.", "↔️ They pick up a couple."],
+    "3": ["🏃‍♂️🏃‍♂️🏃‍♂️ Three runs!", "🔥 Great running, three!", "↔️ Three runs taken."],
+    "4": ["💥 He smashed a Four!", "🏏 Beautiful boundary!", "🚀 Cracking shot for four!", "🎯 That's a maximum four!"],
+    "6": ["🚀 He Smoked It For A Six!", "💣 Maximum!", "🔥 What a massive six!", "🎉 Huge hit over the boundary!"],
+    "out": ["❌ It's Out!", "💥 Bowled him!", "😱 What a wicket!", "⚡ Caught behind!"],
 }
 
 def get_username(user):
     return user.first_name or user.username or "Player"
-
-async def load_users():
-    try:
-        cursor = users_collection.find({})
-        async for user in cursor:
-            user_id = user.get("user_id") or user.get("_id")
-            if not user_id:
-                logger.warning(f"Skipping user without user_id: {user}")
-                continue
-            user["user_id"] = user_id
-            USERS[user_id] = user
-            USER_PM_MATCHES[user_id] = set()
-            USER_CCL_MATCH[user_id] = None
-        logger.info("Users loaded successfully.")
-    except Exception as e:
-        logger.error(f"Error loading users: {e}", exc_info=True)
-
-async def save_user(user_id):
-    try:
-        user = USERS[user_id]
-        await users_collection.update_one(
-            {"user_id": user_id},
-            {"$set": user},
-            upsert=True,
-        )
-    except Exception as e:
-        logger.error(f"Error saving user {user_id}: {e}", exc_info=True)
 
 def ensure_user(user):
     if user.id not in USERS:
@@ -150,6 +92,32 @@ def ensure_user(user):
         }
         USER_PM_MATCHES[user.id] = set()
         USER_CCL_MATCH[user.id] = None
+
+async def save_user(user_id):
+    try:
+        user = USERS[user_id]
+        await users_collection.update_one(
+            {"user_id": user_id},
+            {"$set": user},
+            upsert=True,
+        )
+    except Exception as e:
+        logger.error(f"Error saving user {user_id}: {e}", exc_info=True)
+
+async def load_users():
+    try:
+        cursor = users_collection.find({})
+        async for user in cursor:
+            user_id = user.get("user_id") or user.get("_id")
+            if not user_id:
+                logger.warning(f"Skipping user without user_id: {user}")
+                continue
+            USERS[user_id] = user
+            USER_PM_MATCHES[user_id] = set()
+            USER_CCL_MATCH[user_id] = None
+        logger.info("Users loaded successfully.")
+    except Exception as e:
+        logger.error(f"Error loading users: {e}", exc_info=True)
 
 def profile_text(user_id):
     u = USERS.get(user_id, {})
@@ -293,7 +261,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/profile - Show your profile\n"
         "/daily - Claim daily 2000 🪙 coins\n"
         "/leaderboard - Show leaderboard with coins and wins\n"
-        "/end_match - End ongoing CCL match in group (admin only)\n"
+        "/endmatch - End ongoing CCL match in group (admin only)\n"
         "/help - Show this help message\n"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -357,8 +325,6 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if bet > 0 and USERS[user.id]["coins"] < bet:
         await update.message.reply_text("You don't have enough coins for that bet.")
         return
-
-    # Allow multiple PM matches per user and group, so no check here
 
     match_id = str(uuid.uuid4())
     PM_MATCHES[match_id] = {
@@ -585,6 +551,8 @@ async def pm_bowlnum_choice_callback(update: Update, context: ContextTypes.DEFAU
 
     await process_pm_ball(context, match)
 
+# Process each ball in PM mode
+
 async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
     chat_id = match["group_chat_id"]
 
@@ -608,7 +576,12 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
     if is_out:
         match["wickets"] += 1
         text_lines.append("\n" + random.choice(RUN_COMMENTARY["out"]))
-        if match["innings"] == 1:
+    else:
+        match["score"] += batsman_choice
+        text_lines.append(f"\nTotal Score : {match['score']} Runs")
+
+    if match["innings"] == 1:
+        if match["balls"] >= 6 or match["wickets"] >= 1:
             match["target"] = match["score"]
             match["batting_user"], match["bowling_user"] = match["bowling_user"], match["batting_user"]
             match["score"] = 0
@@ -617,56 +590,51 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
             match["innings"] = 2
             match["batsman_choice"] = None
             match["bowler_choice"] = None
-            text_lines.append(f"\n{USERS[match['bowling_user']]['name']} sets a target of {match['target'] + 1}")
-            text_lines.append(f"{USERS[match['batting_user']]['name']} will now Bat and {USERS[match['bowling_user']]['name']} will now Bowl!")
-        else:
-            if match["score"] > match["target"]:
-                winner = USERS[match["batting_user"]]["name"]
-            elif match["score"] < match["target"]:
-                winner = USERS[match["bowling_user"]]["name"]
-            else:
-                match["superball"] = True
-                match["batsman_choice"] = None
-                match["bowler_choice"] = None
-                text_lines.append("\nMatch tied! Superball time! Both players get one ball each.")
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"{USERS[match['batting_user']]['name']}, choose your batting number for Superball:",
-                    reply_markup=pm_number_keyboard("pm_batnum"),
-                )
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"{USERS[match['bowling_user']]['name']}, wait for your turn to bowl.",
-                )
-                await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
-                return
-            text_lines.append(f"\n🏆 {winner} won the match!")
+            text_lines.append(f"\nInnings over! Target for second innings: {match['target'] + 1}")
+            text_lines.append(f"{USERS[match['batting_user']]['name']} will now Bat and {USERS[match['bowling_user']]['name']} will Bowl!")
             await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
-            if match["bet"] > 0:
-                if winner == USERS[match["batting_user"]]["name"]:
-                    USERS[match["batting_user"]]["coins"] += match["bet"] * 2
-                else:
-                    USERS[match["bowling_user"]]["coins"] += match["bet"] * 2
-            del PM_MATCHES[match["match_id"]]
-            USER_PM_MATCHES[match["batting_user"]].discard(match["match_id"])
-            USER_PM_MATCHES[match["bowling_user"]].discard(match["match_id"])
-            GROUP_PM_MATCHES[chat_id].discard(match["match_id"])
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"{USERS[match['batting_user']]['name']}, choose your batting number:",
+                reply_markup=pm_number_keyboard("pm_batnum"),
+            )
             return
     else:
-        match["score"] += batsman_choice
-        text_lines.append(f"\nTotal Score : {match['score']} Runs")
-        text_lines.append(f"Next Move : {USERS[match['batting_user']]['name']} Continue your Bat!")
+        if match["score"] >= match["target"] + 1 or match["wickets"] >= 1 or match["balls"] >= 6:
+            if match["score"] >= match["target"] + 1:
+                winner_id = match["batting_user"]
+                loser_id = match["bowling_user"]
+            else:
+                winner_id = match["bowling_user"]
+                loser_id = match["batting_user"]
+
+            winner_name = USERS[winner_id]["name"]
+            text_lines.append(f"\n🏆 {winner_name} won the match!")
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
+
+            bet = match.get("bet", 0)
+            if bet > 0:
+                USERS[winner_id]["coins"] += bet * 2
+                USERS[loser_id]["coins"] = max(0, USERS[loser_id]["coins"] - bet)
+
+            USERS[winner_id]["wins"] += 1
+            USERS[loser_id]["losses"] += 1
+
+            del PM_MATCHES[match["match_id"]]
+            USER_PM_MATCHES[winner_id].discard(match["match_id"])
+            USER_PM_MATCHES[loser_id].discard(match["match_id"])
+            GROUP_PM_MATCHES[chat_id].discard(match["match_id"])
+            return
 
     match["batsman_choice"] = None
     match["bowler_choice"] = None
 
     await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
-
     await context.bot.send_message(
         chat_id=chat_id,
         text=f"{USERS[match['batting_user']]['name']}, choose your batting number:",
         reply_markup=pm_number_keyboard("pm_batnum"),
-         )
+    )
 # CCL Mode Keyboards
 
 def ccl_join_cancel_keyboard(match_id):
@@ -1014,10 +982,7 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
         )
     except:
         pass
-
-# /end_match command for group admins to end ongoing CCL match in the group
-
-async def end_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def endmatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
 
@@ -1025,9 +990,8 @@ async def end_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("This command can only be used in groups.")
         return
 
-    # Check if user is admin
     member = await context.bot.get_chat_member(chat.id, user.id)
-    if not (member.status in ["administrator", "creator"]):
+    if member.status not in ["administrator", "creator"]:
         await update.message.reply_text("Only group admins can use this command.")
         return
 
@@ -1046,19 +1010,16 @@ async def end_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
             GROUP_CCL_MATCH[chat.id].discard(match_id)
 
     await update.message.reply_text("All ongoing CCL matches in this group have been ended by admin.")
-async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Unknown command. Use /help to see available commands.")
 
 def main():
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Basic commands
+    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("register", register))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("daily", daily))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
-    application.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^leaderboard_\d$"))
     application.add_handler(CommandHandler("add", add))
     application.add_handler(CommandHandler("help", help_command))
 
@@ -1066,30 +1027,30 @@ def main():
     application.add_handler(CommandHandler("pm", pm_command))
     application.add_handler(CallbackQueryHandler(pm_join_callback, pattern=r"^pm_join_"))
     application.add_handler(CallbackQueryHandler(pm_cancel_callback, pattern=r"^pm_cancel_"))
-    application.add_handler(CallbackQueryHandler(pm_toss_choice_callback, pattern=r"^pm_toss_"))
-    application.add_handler(CallbackQueryHandler(pm_bat_bowl_choice_callback, pattern=r"^pm_bat_|^pm_bowl_"))
+    application.add_handler(CallbackQueryHandler(pm_toss_choice_callback, pattern=r"^pm_toss_(heads|tails)_"))
+    application.add_handler(CallbackQueryHandler(pm_bat_bowl_choice_callback, pattern=r"^pm_(bat|bowl)_"))
     application.add_handler(CallbackQueryHandler(pm_batnum_choice_callback, pattern=r"^pm_batnum_"))
     application.add_handler(CallbackQueryHandler(pm_bowlnum_choice_callback, pattern=r"^pm_bowlnum_"))
+    application.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^leaderboard_"))
 
     # CCL mode handlers
     application.add_handler(CommandHandler("ccl", ccl_command))
     application.add_handler(CallbackQueryHandler(ccl_join_callback, pattern=r"^ccl_join_"))
     application.add_handler(CallbackQueryHandler(ccl_cancel_callback, pattern=r"^ccl_cancel_"))
-    application.add_handler(CallbackQueryHandler(ccl_toss_choice_callback, pattern=r"^ccl_toss_"))
-    application.add_handler(CallbackQueryHandler(ccl_bat_bowl_choice_callback, pattern=r"^ccl_bat_|^ccl_bowl_"))
+    application.add_handler(CallbackQueryHandler(ccl_toss_choice_callback, pattern=r"^ccl_toss_(heads|tails)_"))
+    application.add_handler(CallbackQueryHandler(ccl_bat_bowl_choice_callback, pattern=r"^ccl_(bat|bowl)_"))
+    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Text(None), ccl_dm_handler))
 
-    # DM message handler for batsman and bowler choices in CCL mode
-    application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, ccl_dm_handler))
+    # Admin command
+    application.add_handler(CommandHandler("endmatch", endmatch))
 
-    # /end_match command
-    application.add_handler(CommandHandler("end_match", end_match))
+    # Handle unknown commands
+    application.add_handler(MessageHandler(filters.COMMAND, lambda update, context: update.message.reply_text("Unknown command. Use /help.")))
 
-    # Unknown commands handler
-    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
-
-    print("Bot started...")
+    logger.info("Bot started.")
     application.run_polling()
 
 if __name__ == "__main__":
+    asyncio.run(load_users())
     main()
     
