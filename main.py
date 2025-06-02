@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Replace with your actual bot token and admin IDs
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
-ADMIN_IDS = {7361215114}  # Replace with your admin user IDs
+ADMIN_IDS = {123456789}  # Replace with your admin user IDs
 
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
@@ -44,8 +44,15 @@ CCL_MATCHES = {}
 
 COINS_EMOJI = "🪙"
 
-# Bowling types allowed in CCL mode
-BOWLING_TYPES = {"rs", "bouncer", "yorker", "short", "slower", "knuckle"}
+# Bowling types allowed in CCL mode and their mapped numbers
+BOWLING_TYPES = {
+    "rs": 0,
+    "bouncer": 1,
+    "yorker": 2,
+    "short": 3,
+    "slower": 4,
+    "knuckle": 6,
+}
 
 # Bowling commentary mapping
 BOWLING_COMMENTARY = {
@@ -67,11 +74,26 @@ RUN_GIFS = {
     "century": "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
 }
 
-# Run commentary messages
-RUN_COMMENTARY = {
+# Run commentary messages for CCL mode (0,1,2,3,4,6)
+RUN_COMMENTARY_CCL = {
+    0: ["Dot Ball!", "No run.", "Well bowled, no run."],
+    1: ["Quick single.", "One run taken.", "They sneak a single."],
+    2: ["Two runs!", "Good running between the wickets.", "They pick up a couple."],
+    3: ["Three runs!", "Great running, three!", "Three runs taken."],
+    4: ["He smashed a Four!", "Beautiful boundary!", "Cracking shot for four!"],
+    6: ["He Smoked It For A Six!", "Maximum!", "What a massive six!"],
+    "out": ["It's Out!", "Bowled him!", "What a wicket!", "Caught behind!"],
+}
+
+# Run commentary messages for PM mode (1,2,3,4,5,6)
+RUN_COMMENTARY_PM = {
+    1: ["Quick single.", "One run taken.", "They sneak a single."],
+    2: ["Two runs!", "Good running between the wickets.", "They pick up a couple."],
+    3: ["Three runs!", "Great running, three!", "Three runs taken."],
+    4: ["He smashed a Four!", "Beautiful boundary!", "Cracking shot for four!"],
+    5: ["Five runs! (Rare!)"],
+    6: ["He Smoked It For A Six!", "Maximum!", "What a massive six!"],
     "0": ["Dot Ball!", "No run.", "Well bowled, no run."],
-    "4": ["He smashed a Four!", "Beautiful boundary!", "Cracking shot for four!"],
-    "6": ["He Smoked It For A Six!", "Maximum!", "What a massive six!"],
     "out": ["It's Out!", "Bowled him!", "What a wicket!", "Caught behind!"],
 }
 
@@ -266,7 +288,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help - Show this help message\n"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
-# PM Mode Keyboards
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+# PM Mode Keyboards (runs 1,2,3,4,5,6)
 
 def pm_number_keyboard(prefix):
     # Two rows: 1-3 and 4-6
@@ -347,7 +371,6 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "target": None,
         "batsman_choice": None,
         "bowler_choice": None,
-        "superball": False,
         "milestone_50": False,
         "milestone_100": False,
     }
@@ -493,7 +516,6 @@ async def pm_bat_bowl_choice_callback(update: Update, context: ContextTypes.DEFA
         "target": None,
         "batsman_choice": None,
         "bowler_choice": None,
-        "superball": False,
         "milestone_50": False,
         "milestone_100": False,
     })
@@ -584,10 +606,14 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
 
     if is_out:
         current_match["wickets"] += 1
-        text_lines.append("\n" + random.choice(RUN_COMMENTARY["out"]))
+        text_lines.append("\n" + random.choice(RUN_COMMENTARY_PM["out"]))
+        gif_url = RUN_GIFS["out"]
     else:
         current_match["score"] += batsman_choice
         text_lines.append(f"\nTotal Score : {current_match['score']} Runs")
+        run_comment_list = RUN_COMMENTARY_PM.get(batsman_choice, ["Runs scored!"])
+        text_lines.append(random.choice(run_comment_list))
+        gif_url = RUN_GIFS.get(str(batsman_choice), None)
 
         # Milestone checks
         if not current_match.get("milestone_50") and current_match["score"] >= 50:
@@ -659,6 +685,8 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
     current_match["bowler_choice"] = None
 
     await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
+    if gif_url:
+        await context.bot.send_animation(chat_id=chat_id, animation=gif_url)
     if milestone_gif:
         await context.bot.send_animation(chat_id=chat_id, animation=milestone_gif, caption=milestone_text)
     await context.bot.send_message(
@@ -729,7 +757,6 @@ async def ccl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "target": None,
         "batsman_choice": None,
         "bowler_choice": None,
-        "superball": False,
         "milestone_50": False,
         "milestone_100": False,
     }
@@ -865,7 +892,6 @@ async def ccl_bat_bowl_choice_callback(update: Update, context: ContextTypes.DEF
         "target": None,
         "batsman_choice": None,
         "bowler_choice": None,
-        "superball": False,
         "milestone_50": False,
         "milestone_100": False,
     })
@@ -884,7 +910,7 @@ async def ccl_bat_bowl_choice_callback(update: Update, context: ContextTypes.DEF
     try:
         await context.bot.send_message(
             chat_id=current_match["batting_user"],
-            text="Please send your batting number (1-6):"
+            text="Please send your batting number (0,1,2,3,4,6):"
         )
     except:
         await query.message.reply_text(f"Cannot send DM to {batting_mention}. Please start a chat with me first.", parse_mode="Markdown")
@@ -916,8 +942,8 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user.id == current_match["batting_user"]:
-        if text not in {"1", "2", "3", "4", "5", "6"}:
-            await update.message.reply_text("Invalid batting number. Please send one of 1,2,3,4,5,6.")
+        if text not in {"0", "1", "2", "3", "4", "6"}:
+            await update.message.reply_text("Invalid batting number. Please send one of 0,1,2,3,4,6.")
             return
         if current_match["batsman_choice"] is not None:
             await update.message.reply_text("You have already sent your batting number for this ball.")
@@ -926,7 +952,7 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Batting number {text} received.")
     elif user.id == current_match["bowling_user"]:
         if text not in BOWLING_TYPES:
-            await update.message.reply_text(f"Invalid bowling type. Please send one of {', '.join(BOWLING_TYPES)}.")
+            await update.message.reply_text(f"Invalid bowling type. Please send one of {', '.join(BOWLING_TYPES.keys())}.")
             return
         if current_match["bowler_choice"] is not None:
             await update.message.reply_text("You have already sent your bowling type for this ball.")
@@ -950,21 +976,9 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
     over_num = (current_match["balls"] - 1) // 6 + 1
     ball_num = (current_match["balls"] - 1) % 6 + 1
 
-    is_out = False
-    # Bowler choice is a bowling type, batsman choice is number 1-6
-    # Out if batsman_choice equals bowling type mapped number
-    # Map bowling types to numbers for out check
-    bowling_type_to_number = {
-        "rs": 0,
-        "bouncer": 1,
-        "yorker": 2,
-        "short": 3,
-        "slower": 4,
-        "knuckle": 6,
-    }
-    bowler_number = bowling_type_to_number.get(bowler_choice, -1)
-    if batsman_choice == bowler_number:
-        is_out = True
+    # Determine if out: batsman run equals bowler's mapped number
+    bowler_number = BOWLING_TYPES.get(bowler_choice, -1)
+    is_out = (batsman_choice == bowler_number)
 
     # Announce over and ball
     await context.bot.send_message(chat_id=chat_id, text=f"Over {over_num} Ball {ball_num}")
@@ -983,14 +997,17 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
 
     if is_out:
         current_match["wickets"] += 1
-        text_lines.append(random.choice(RUN_COMMENTARY["out"]))
+        text_lines.append(random.choice(RUN_COMMENTARY_CCL["out"]))
         gif_url = RUN_GIFS["out"]
     else:
         current_match["score"] += batsman_choice
-        run_str = str(batsman_choice)
-        text_lines.append(random.choice(RUN_COMMENTARY.get(run_str, ["Runs scored!"])))
-        gif_url = RUN_GIFS.get(run_str, None)
-        # Check milestones
+        run_comment_list = RUN_COMMENTARY_CCL.get(batsman_choice, ["Runs scored!"])
+        text_lines.append(random.choice(run_comment_list))
+        gif_url = RUN_GIFS.get(str(batsman_choice), None)
+
+        text_lines.append(f"Total Score: {current_match['score']} Runs")
+
+        # Milestone checks
         if not current_match.get("milestone_50") and current_match["score"] >= 50:
             milestone_gif = RUN_GIFS["halfcentury"]
             milestone_text = "🏏 Half-century! 50 runs!"
@@ -1000,12 +1017,9 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
             milestone_text = "💯 Century! 100 runs!"
             current_match["milestone_100"] = True
 
-    text_lines.append(f"Total Score: {current_match['score']} Runs")
-
     await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
     if gif_url:
         await context.bot.send_animation(chat_id=chat_id, animation=gif_url)
-
     if milestone_gif:
         await context.bot.send_animation(chat_id=chat_id, animation=milestone_gif, caption=milestone_text)
 
@@ -1028,7 +1042,7 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
                 text=f"Innings over! Target for second innings: {current_match['target'] + 1}\n"
                      f"{USERS[current_match['batting_user']]['name']} will now Bat and {USERS[current_match['bowling_user']]['name']} will Bowl!")
             await context.bot.send_message(chat_id=current_match["batting_user"],
-                text="Please send your batting number (1-6).")
+                text="Please send your batting number (0,1,2,3,4,6).")
             await context.bot.send_message(chat_id=current_match["bowling_user"],
                 text="Please send your bowling type (rs, bouncer, yorker, short, slower, knuckle).")
             return
@@ -1061,7 +1075,7 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
 
     # Prompt next ball choices
     await context.bot.send_message(chat_id=current_match["batting_user"],
-                                   text="Please send your batting number (1-6).")
+                                   text="Please send your batting number (0,1,2,3,4,6).")
     await context.bot.send_message(chat_id=current_match["bowling_user"],
                                    text="Please send your bowling type (rs, bouncer, yorker, short, slower, knuckle).")
 
