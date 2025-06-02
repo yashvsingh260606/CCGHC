@@ -25,8 +25,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Replace with your actual bot token and admin IDs
-TOKEN = "8156231369:AAHDFvjD9Aur9y5QjB5YWzvCQp7bUdLuuEc"
-ADMIN_IDS = {123456789}  # Replace with your admin user IDs
+TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
+ADMIN_IDS = {7361215114}  # Replace with your admin user IDs
 
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
