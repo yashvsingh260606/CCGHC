@@ -39,12 +39,11 @@ GROUP_PM_MATCHES = {}
 PM_MATCHES = {}
 
 USER_CCL_MATCH = {}
-GROUP_CCL_MATCH = {}  # Stores single active match_id per group to enforce one match per group
+GROUP_CCL_MATCH = {}  # Enforce one active CCL match per group
 CCL_MATCHES = {}
 
 COINS_EMOJI = "🪙"
 
-# Bowling types allowed in CCL mode and their mapped numbers
 BOWLING_TYPES = {
     "rs": 0,
     "bouncer": 1,
@@ -154,8 +153,6 @@ def profile_text(user_id):
         f"Losses: {losses}\n"
         f"Ties: {ties}\n"
     )
-
-# Command Handlers
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -578,7 +575,7 @@ async def pm_bowlnum_choice_callback(update: Update, context: ContextTypes.DEFAU
 
     await process_pm_ball(context, current_match)
 
-# Process each ball in PM mode with tie handling
+# Process each ball in PM mode with correct tie logic
 
 async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
     chat_id = current_match["group_chat_id"]
@@ -614,7 +611,6 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
         text_lines.append(random.choice(run_comment_list))
         gif_url = RUN_GIFS.get(str(batsman_choice), None)
 
-        # Milestone checks
         if not current_match.get("milestone_50") and current_match["score"] >= 50:
             milestone_gif = RUN_GIFS["halfcentury"]
             milestone_text = "🏏 Half-century! 50 runs!"
@@ -649,22 +645,27 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
             )
             return
     else:
-        # Second Innings: ends on chase, wicket, or tie
-        target_plus_one = current_match["target"] + 1
-        if current_match["score"] > current_match["target"]:
-            winner_id = current_match["batting_user"]
-            loser_id = current_match["bowling_user"]
-            result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
-        elif current_match["score"] == current_match["target"]:
-            # Tie condition
-            winner_id = None
-            loser_id = None
-            result_text = "🤝 The match is a tie!"
-        elif current_match["wickets"] >= 1:
-            winner_id = current_match["bowling_user"]
-            loser_id = current_match["batting_user"]
-            result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
+        target = current_match["target"]
+        # Check if innings ended by wicket or balls (if you want ball limit, add here)
+        innings_ended = current_match["wickets"] >= 1  # Assuming 1 wicket ends innings
+
+        # Only declare result if innings ended
+        if innings_ended:
+            if current_match["score"] > target:
+                winner_id = current_match["batting_user"]
+                loser_id = current_match["bowling_user"]
+                result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
+            elif current_match["score"] == target:
+                # Tie only if innings ended (wicket fallen)
+                winner_id = None
+                loser_id = None
+                result_text = "🤝 The match is a tie!"
+            else:
+                winner_id = current_match["bowling_user"]
+                loser_id = current_match["batting_user"]
+                result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
         else:
+            # Innings not ended, continue
             winner_id = None
             loser_id = None
             result_text = None
@@ -684,11 +685,9 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
                 USERS[winner_id]["wins"] += 1
                 USERS[loser_id]["losses"] += 1
             else:
-                # Tie increment
                 USERS[current_match["batting_user"]]["ties"] += 1
                 USERS[current_match["bowling_user"]]["ties"] += 1
 
-            # Save users
             if winner_id:
                 await save_user(winner_id)
                 await save_user(loser_id)
@@ -754,7 +753,7 @@ async def ccl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ensure_user(user)
 
-    # Check if group already has an active CCL match
+    # Enforce only one active CCL match per group
     if GROUP_CCL_MATCH.get(chat.id):
         await update.message.reply_text("❌ There is already an ongoing CCL match in this group. Please wait for it to finish.")
         return
@@ -1080,19 +1079,22 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, current_match):
                 text="Please send your bowling type (rs, bouncer, yorker, short, slower, knuckle).")
             return
     else:
-        target_plus_one = current_match["target"] + 1
-        if current_match["score"] > current_match["target"]:
-            winner_id = current_match["batting_user"]
-            loser_id = current_match["bowling_user"]
-            result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
-        elif current_match["score"] == current_match["target"]:
-            winner_id = None
-            loser_id = None
-            result_text = "🤝 The match is a tie!"
-        elif current_match["wickets"] >= 1:
-            winner_id = current_match["bowling_user"]
-            loser_id = current_match["batting_user"]
-            result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
+        target = current_match["target"]
+        innings_ended = current_match["wickets"] >= 1  # Assuming 1 wicket ends innings
+
+        if innings_ended:
+            if current_match["score"] > target:
+                winner_id = current_match["batting_user"]
+                loser_id = current_match["bowling_user"]
+                result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
+            elif current_match["score"] == target:
+                winner_id = None
+                loser_id = None
+                result_text = "🤝 The match is a tie!"
+            else:
+                winner_id = current_match["bowling_user"]
+                loser_id = current_match["batting_user"]
+                result_text = f"🏆 {USERS[winner_id]['name']} won the match!"
         else:
             winner_id = None
             loser_id = None
