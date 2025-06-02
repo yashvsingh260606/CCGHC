@@ -4,11 +4,7 @@ import uuid
 import asyncio
 from datetime import datetime, timedelta
 
-from telegram import (
-    Update,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -26,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
-ADMIN_IDS = {7361215114}
+ADMIN_IDS = {7361215114}  # Replace with your admin IDs
 
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
@@ -45,8 +41,15 @@ CCL_MATCHES = {}
 COINS_EMOJI = "🪙"
 
 BOWLING_TYPES = {"rs", "bouncer", "yorker", "short", "slower", "knuckle"}
+BOWLING_TYPE_TO_NUMBER = {
+    "rs": 0,
+    "bouncer": 1,
+    "yorker": 2,
+    "short": 3,
+    "slower": 4,
+    "knuckle": 6,
+}
 
-# GIF URLs for runs 0, 4, 6 and wickets (replace with your actual GIF URLs)
 RUN_GIFS = {
     "0": "https://media.giphy.com/media/3o6ZtpxSZbQRRnwCKQ/giphy.gif",
     "4": "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
@@ -290,6 +293,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/profile - Show your profile\n"
         "/daily - Claim daily 2000 🪙 coins\n"
         "/leaderboard - Show leaderboard with coins and wins\n"
+        "/end_match - End ongoing CCL match in group (admin only)\n"
         "/help - Show this help message\n"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -354,11 +358,7 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You don't have enough coins for that bet.")
         return
 
-    for match_id in USER_PM_MATCHES.get(user.id, set()):
-        match = PM_MATCHES.get(match_id)
-        if match and match["group_chat_id"] == chat.id and match["state"] != "finished":
-            await update.message.reply_text("You already have an active PM match in this group.")
-            return
+    # Allow multiple PM matches per user and group, so no check here
 
     match_id = str(uuid.uuid4())
     PM_MATCHES[match_id] = {
@@ -666,7 +666,7 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
         chat_id=chat_id,
         text=f"{USERS[match['batting_user']]['name']}, choose your batting number:",
         reply_markup=pm_number_keyboard("pm_batnum"),
-    )
+         )
 # CCL Mode Keyboards
 
 def ccl_join_cancel_keyboard(match_id):
@@ -703,6 +703,7 @@ async def ccl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ensure_user(user)
 
+    # Restrict one CCL match per user
     if USER_CCL_MATCH.get(user.id):
         match_id = USER_CCL_MATCH[user.id]
         match = CCL_MATCHES.get(match_id)
@@ -781,7 +782,7 @@ async def ccl_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if user.id != match["initiator"]:
-        await query.answer("Only the match initiator can cancel.", show_alert=True)
+        await query.answer("Only the initiator can cancel.", show_alert=True)
         return
 
     chat_id = match["group_chat_id"]
@@ -886,8 +887,6 @@ async def ccl_bat_bowl_choice_callback(update: Update, context: ContextTypes.DEF
 
     await query.answer()
 
-# DM message handler for batsman and bowler inputs
-
 async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text.strip().lower()
@@ -903,7 +902,7 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user.id == match["batting_user"]:
-        if text not in {"0","1","2","3","4","6"}:
+        if text not in {"0", "1", "2", "3", "4", "6"}:
             await update.message.reply_text("Invalid batting number. Please send one of 0,1,2,3,4,6.")
             return
         if match["batsman_choice"] is not None:
@@ -927,16 +926,6 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if match["batsman_choice"] is not None and match["bowler_choice"] is not None:
         await process_ccl_ball(context, match)
 
-# CRITICAL: Bowling type to number mapping for CCL wickets
-BOWLING_TYPE_TO_NUMBER = {
-    "rs": 5,          # Example:  rs  beats number 5
-    "bouncer": 3,     # Example: bouncer beats number 3
-    "yorker": 1,      # Example: yorker beats number 1
-    "short": 6,       # Example: short beats number 6
-    "slower": 2,      # Example: slower beats number 2
-    "knuckle": 4,      # Example: knuckle beats number 4
-}
-
 async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
     chat_id = match["group_chat_id"]
     batsman_choice = match["batsman_choice"]
@@ -947,15 +936,15 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
     ball_num = (match["balls"] - 1) % 6 + 1
 
     await context.bot.send_message(chat_id=chat_id, text=f"Over {over_num}")
-    await asyncio.sleep(1)
+    await asyncio.sleep(0.5)
     await context.bot.send_message(chat_id=chat_id, text=f"Ball {ball_num}")
-    await asyncio.sleep(1)
+    await asyncio.sleep(0.5)
 
-    await context.bot.send_message(chat_id=chat_id, text=f"{USERS[match['bowling_user']]['name']} Bowled A {bowler_choice.capitalize()}")
-    await asyncio.sleep(8)  # suspense delay
+    await context.bot.send_message(chat_id=chat_id, text=f"{USERS[match['bowling_user']]['name']} Bowled A {bowler_choice.capitalize()} Ball")
+    await asyncio.sleep(3)
 
     await context.bot.send_message(chat_id=chat_id, text=BOWLING_COMMENTARY.get(bowler_choice, ""))
-    await asyncio.sleep(6)  # suspense delay
+    await asyncio.sleep(4)
 
     is_out = batsman_choice == BOWLING_TYPE_TO_NUMBER.get(bowler_choice, -1)
 
@@ -1025,6 +1014,38 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
         )
     except:
         pass
+
+# /end_match command for group admins to end ongoing CCL match in the group
+
+async def end_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("This command can only be used in groups.")
+        return
+
+    # Check if user is admin
+    member = await context.bot.get_chat_member(chat.id, user.id)
+    if not (member.status in ["administrator", "creator"]):
+        await update.message.reply_text("Only group admins can use this command.")
+        return
+
+    matches = GROUP_CCL_MATCH.get(chat.id, set())
+    if not matches:
+        await update.message.reply_text("No ongoing CCL match in this group.")
+        return
+
+    for match_id in list(matches):
+        match = CCL_MATCHES.get(match_id)
+        if match:
+            del CCL_MATCHES[match_id]
+            USER_CCL_MATCH[match["initiator"]] = None
+            if match.get("opponent"):
+                USER_CCL_MATCH[match["opponent"]] = None
+            GROUP_CCL_MATCH[chat.id].discard(match_id)
+
+    await update.message.reply_text("All ongoing CCL matches in this group have been ended by admin.")
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Unknown command. Use /help to see available commands.")
 
@@ -1060,11 +1081,11 @@ def main():
     # DM message handler for batsman and bowler choices in CCL mode
     application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, ccl_dm_handler))
 
+    # /end_match command
+    application.add_handler(CommandHandler("end_match", end_match))
+
     # Unknown commands handler
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
-
-    # Load users from DB on startup
-    application.job_queue.run_once(lambda ctx: load_users(), 0)
 
     print("Bot started...")
     application.run_polling()
