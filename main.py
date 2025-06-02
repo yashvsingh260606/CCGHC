@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 ADMIN_IDS = {123456789}  # Replace with your admin user IDs
 
-MONGO_URL = "8156231369:AAHDFvjD9Aur9y5QjB5YWzvCQp7bUdLuuEc"
+MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
 users_collection = db.users
