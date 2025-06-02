@@ -48,10 +48,10 @@ BOWLING_TYPES = {"rs", "bouncer", "yorker", "short", "slower", "knuckle"}
 
 # GIF URLs for runs 0, 4, 6 and wickets (replace with your actual GIF URLs)
 RUN_GIFS = {
-    "0": "https://media.giphy.com/media/3o6ZtpxSZbQRRnwCKQ/giphy.gif",  # Dot ball GIF
-    "4": "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",  # Four GIF
-    "6": "https://media.giphy.com/media/3o7aD4j6z6l7b1kN2k/giphy.gif",  # Six GIF
-    "out": "https://media.giphy.com/media/3o7TKtnuHOHHUjR38Y/giphy.gif",  # Wicket GIF
+    "0": "https://media.giphy.com/media/3o6ZtpxSZbQRRnwCKQ/giphy.gif",
+    "4": "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
+    "6": "https://media.giphy.com/media/3o7aD4j6z6l7b1kN2k/giphy.gif",
+    "out": "https://media.giphy.com/media/3o7TKtnuHOHHUjR38Y/giphy.gif",
 }
 
 BOWLING_COMMENTARY = {
@@ -205,7 +205,94 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await save_user(user.id)
     await update.message.reply_text(f"You received 2000 {COINS_EMOJI} as daily reward!", parse_mode="Markdown")
 
-# (Next parts will include PM and CCL mode handlers with all your requested logic)
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    ensure_user(user)
+    sorted_users = sorted(USERS.values(), key=lambda u: u.get("coins", 0), reverse=True)
+    page = 1
+    if context.args and context.args[0].isdigit():
+        page = int(context.args[0])
+    text = ""
+    if page == 1:
+        text = "🏆 **Top 10 Richest Players by Coins:**\n\n"
+        for i, u in enumerate(sorted_users[:10], 1):
+            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('coins', 0)} {COINS_EMOJI}\n"
+    else:
+        sorted_wins = sorted(USERS.values(), key=lambda u: u.get("wins", 0), reverse=True)
+        text = "🏆 **Top 10 Players by Wins:**\n\n"
+        for i, u in enumerate(sorted_wins[:10], 1):
+            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('wins', 0)} Wins\n"
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⬅️ Coins", callback_data=f"leaderboard_1"),
+            InlineKeyboardButton("Wins ➡️", callback_data=f"leaderboard_2"),
+        ]
+    ])
+    await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+async def leaderboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    _, page = query.data.split("_")
+    page = int(page)
+    sorted_users = sorted(USERS.values(), key=lambda u: u.get("coins", 0), reverse=True)
+    text = ""
+    if page == 1:
+        text = "🏆 **Top 10 Richest Players by Coins:**\n\n"
+        for i, u in enumerate(sorted_users[:10], 1):
+            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('coins', 0)} {COINS_EMOJI}\n"
+    else:
+        sorted_wins = sorted(USERS.values(), key=lambda u: u.get("wins", 0), reverse=True)
+        text = "🏆 **Top 10 Players by Wins:**\n\n"
+        for i, u in enumerate(sorted_wins[:10], 1):
+            text += f"{i}. {u.get('name', 'Unknown')} - {u.get('wins', 0)} Wins\n"
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⬅️ Coins", callback_data=f"leaderboard_1"),
+            InlineKeyboardButton("Wins ➡️", callback_data=f"leaderboard_2"),
+        ]
+    ])
+    await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await query.answer()
+
+async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("You are not authorized to use this command.", parse_mode="Markdown")
+        return
+    args = context.args
+    if len(args) != 2:
+        await update.message.reply_text("Usage: /add <user_id> <amount>", parse_mode="Markdown")
+        return
+    try:
+        target_id = int(args[0])
+        amount = int(args[1])
+    except ValueError:
+        await update.message.reply_text("Please provide valid user_id and amount.", parse_mode="Markdown")
+        return
+    if target_id not in USERS:
+        await update.message.reply_text("User not found.", parse_mode="Markdown")
+        return
+    USERS[target_id]["coins"] += amount
+    await save_user(target_id)
+    await update.message.reply_text(
+        f"Added {amount}{COINS_EMOJI} to {USERS[target_id]['name']}.", parse_mode="Markdown"
+    )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "**CCG HandCricket Commands:**\n\n"
+        "/start - Start the bot\n"
+        "/register - Register and get 4000 🪙 coins\n"
+        "/pm [bet] - Start a PM match optionally with bet\n"
+        "/ccl - Start a CCL match\n"
+        "/profile - Show your profile\n"
+        "/daily - Claim daily 2000 🪙 coins\n"
+        "/leaderboard - Show leaderboard with coins and wins\n"
+        "/help - Show this help message\n"
+    )
+    await update.message.reply_text(help_text, parse_mode="Markdown")
 # PM Mode Keyboards
 
 def pm_join_cancel_keyboard(match_id):
@@ -233,7 +320,6 @@ def pm_bat_bowl_keyboard(match_id):
     )
 
 def pm_number_keyboard(prefix):
-    # Buttons 1-3 first row, 4-6 second row
     buttons = [
         [InlineKeyboardButton(str(n), callback_data=f"{prefix}_{n}") for n in [1, 2, 3]],
         [InlineKeyboardButton(str(n), callback_data=f"{prefix}_{n}") for n in [4, 5, 6]],
@@ -268,7 +354,6 @@ async def pm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You don't have enough coins for that bet.")
         return
 
-    # Check if user already in a PM match in this group
     for match_id in USER_PM_MATCHES.get(user.id, set()):
         match = PM_MATCHES.get(match_id)
         if match and match["group_chat_id"] == chat.id and match["state"] != "finished":
@@ -458,7 +543,6 @@ async def pm_batnum_choice_callback(update: Update, context: ContextTypes.DEFAUL
     _, num_str = query.data.split("_", 2)
     num = int(num_str)
 
-    # Find match where user is batting and waiting for batsman choice
     match = None
     for m in PM_MATCHES.values():
         if m["state"] == "batting" and m["batting_user"] == user.id and m["batsman_choice"] is None:
@@ -470,10 +554,8 @@ async def pm_batnum_choice_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     match["batsman_choice"] = num
-
     await query.answer(f"You chose {num} for batting.")
 
-    # Inform group chat that batsman chose number, now bowler turn
     await context.bot.send_message(
         chat_id=match["group_chat_id"],
         text=f"{USERS[match['batting_user']]['name']} has chosen their number. Now {USERS[match['bowling_user']]['name']}, choose your bowling number:",
@@ -488,7 +570,6 @@ async def pm_bowlnum_choice_callback(update: Update, context: ContextTypes.DEFAU
     _, num_str = query.data.split("_", 2)
     num = int(num_str)
 
-    # Find match where user is bowling and waiting for bowler choice
     match = None
     for m in PM_MATCHES.values():
         if m["state"] == "batting" and m["bowling_user"] == user.id and m["bowler_choice"] is None:
@@ -500,10 +581,8 @@ async def pm_bowlnum_choice_callback(update: Update, context: ContextTypes.DEFAU
         return
 
     match["bowler_choice"] = num
-
     await query.answer(f"You chose {num} for bowling.")
 
-    # Process ball result
     await process_pm_ball(context, match)
 
 async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
@@ -516,23 +595,21 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
     over_num = (match["balls"] - 1) // 6
     ball_num = (match["balls"] - 1) % 6 + 1
 
-    # Check for wicket
     is_out = batsman_choice == bowler_choice
 
-    text_lines = []
-    text_lines.append(f"Over: {over_num}.{ball_num}")
-    text_lines.append(f"🏏 Batter: {USERS[match['batting_user']]['name']}")
-    text_lines.append(f"⚾ Bowler: {USERS[match['bowling_user']]['name']}")
-    text_lines.append(f"{USERS[match['batting_user']]['name']} Bat {batsman_choice}")
-    text_lines.append(f"{USERS[match['bowling_user']]['name']} Bowl {bowler_choice}")
+    text_lines = [
+        f"Over: {over_num}.{ball_num}",
+        f"🏏 Batter: {USERS[match['batting_user']]['name']}",
+        f"⚾ Bowler: {USERS[match['bowling_user']]['name']}",
+        f"{USERS[match['batting_user']]['name']} Bat {batsman_choice}",
+        f"{USERS[match['bowling_user']]['name']} Bowl {bowler_choice}",
+    ]
 
     if is_out:
         match["wickets"] += 1
         text_lines.append("\n" + random.choice(RUN_COMMENTARY["out"]))
         if match["innings"] == 1:
-            # Set target for second innings
             match["target"] = match["score"]
-            # Swap batting and bowling
             match["batting_user"], match["bowling_user"] = match["bowling_user"], match["batting_user"]
             match["score"] = 0
             match["balls"] = 0
@@ -543,18 +620,15 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
             text_lines.append(f"\n{USERS[match['bowling_user']]['name']} sets a target of {match['target'] + 1}")
             text_lines.append(f"{USERS[match['batting_user']]['name']} will now Bat and {USERS[match['bowling_user']]['name']} will now Bowl!")
         else:
-            # Second innings wicket, match ends
             if match["score"] > match["target"]:
                 winner = USERS[match["batting_user"]]["name"]
             elif match["score"] < match["target"]:
                 winner = USERS[match["bowling_user"]]["name"]
             else:
-                # Tie triggers superball
                 match["superball"] = True
                 match["batsman_choice"] = None
                 match["bowler_choice"] = None
                 text_lines.append("\nMatch tied! Superball time! Both players get one ball each.")
-                # Prompt batsman for superball choice
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=f"{USERS[match['batting_user']]['name']}, choose your batting number for Superball:",
@@ -566,16 +640,13 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
                 )
                 await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
                 return
-            # Declare winner
             text_lines.append(f"\n🏆 {winner} won the match!")
             await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
-            # Handle bet payout
             if match["bet"] > 0:
                 if winner == USERS[match["batting_user"]]["name"]:
                     USERS[match["batting_user"]]["coins"] += match["bet"] * 2
                 else:
                     USERS[match["bowling_user"]]["coins"] += match["bet"] * 2
-            # Clean up
             del PM_MATCHES[match["match_id"]]
             USER_PM_MATCHES[match["batting_user"]].discard(match["match_id"])
             USER_PM_MATCHES[match["bowling_user"]].discard(match["match_id"])
@@ -586,18 +657,16 @@ async def process_pm_ball(context: ContextTypes.DEFAULT_TYPE, match):
         text_lines.append(f"\nTotal Score : {match['score']} Runs")
         text_lines.append(f"Next Move : {USERS[match['batting_user']]['name']} Continue your Bat!")
 
-    # Reset choices for next ball
     match["batsman_choice"] = None
     match["bowler_choice"] = None
 
     await context.bot.send_message(chat_id=chat_id, text="\n".join(text_lines))
 
-    # Prompt batsman for next choice
     await context.bot.send_message(
         chat_id=chat_id,
         text=f"{USERS[match['batting_user']]['name']}, choose your batting number:",
         reply_markup=pm_number_keyboard("pm_batnum"),
-        )
+    )
 # CCL Mode Keyboards
 
 def ccl_join_cancel_keyboard(match_id):
@@ -712,7 +781,7 @@ async def ccl_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if user.id != match["initiator"]:
-        await query.answer("Only the initiator can cancel.", show_alert=True)
+        await query.answer("Only the match initiator can cancel.", show_alert=True)
         return
 
     chat_id = match["group_chat_id"]
@@ -834,7 +903,6 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user.id == match["batting_user"]:
-        # Validate batsman input
         if text not in {"0","1","2","3","4","6"}:
             await update.message.reply_text("Invalid batting number. Please send one of 0,1,2,3,4,6.")
             return
@@ -844,7 +912,6 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         match["batsman_choice"] = int(text)
         await update.message.reply_text(f"Batting number {text} received.")
     elif user.id == match["bowling_user"]:
-        # Validate bowler input
         if text not in BOWLING_TYPES:
             await update.message.reply_text("Invalid bowling type. Please send one of rs, bouncer, yorker, short, slower, knuckle.")
             return
@@ -857,9 +924,18 @@ async def ccl_dm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You are not a player in this match.")
         return
 
-    # If both choices received, process ball
     if match["batsman_choice"] is not None and match["bowler_choice"] is not None:
         await process_ccl_ball(context, match)
+
+# CRITICAL: Bowling type to number mapping for CCL wickets
+BOWLING_TYPE_TO_NUMBER = {
+    "rs": 5,          # Example:  rs  beats number 5
+    "bouncer": 3,     # Example: bouncer beats number 3
+    "yorker": 1,      # Example: yorker beats number 1
+    "short": 6,       # Example: short beats number 6
+    "slower": 2,      # Example: slower beats number 2
+    "knuckle": 4,      # Example: knuckle beats number 4
+}
 
 async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
     chat_id = match["group_chat_id"]
@@ -870,22 +946,18 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
     over_num = (match["balls"] - 1) // 6 + 1
     ball_num = (match["balls"] - 1) % 6 + 1
 
-    # Announce over and ball
     await context.bot.send_message(chat_id=chat_id, text=f"Over {over_num}")
     await asyncio.sleep(1)
     await context.bot.send_message(chat_id=chat_id, text=f"Ball {ball_num}")
     await asyncio.sleep(1)
 
-    # Bowling type message with suspense delay
-    bowling_text = BOWLING_COMMENTARY.get(bowler_choice, "")
     await context.bot.send_message(chat_id=chat_id, text=f"{USERS[match['bowling_user']]['name']} Bowled A {bowler_choice.capitalize()}")
     await asyncio.sleep(8)  # suspense delay
 
-    await context.bot.send_message(chat_id=chat_id, text=bowling_text)
+    await context.bot.send_message(chat_id=chat_id, text=BOWLING_COMMENTARY.get(bowler_choice, ""))
     await asyncio.sleep(6)  # suspense delay
 
-    # Determine if wicket
-    is_out = (batsman_choice == BOWLING_TYPE_TO_NUMBER.get(bowler_choice, -1))
+    is_out = batsman_choice == BOWLING_TYPE_TO_NUMBER.get(bowler_choice, -1)
 
     if is_out:
         run_text = random.choice(RUN_COMMENTARY["out"])
@@ -904,17 +976,13 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
 
     await asyncio.sleep(1)
 
-    # Score update
     await context.bot.send_message(chat_id=chat_id, text=f"Score: {match['score']} Runs, {match['wickets']} Wickets")
 
-    # Reset choices for next ball
     match["batsman_choice"] = None
     match["bowler_choice"] = None
 
-    # Check innings end conditions
     if match["balls"] >= 6 or match["wickets"] >= 1:
         if match["innings"] == 1:
-            # Switch innings
             match["innings"] = 2
             match["target"] = match["score"] + 1
             match["balls"] = 0
@@ -925,20 +993,17 @@ async def process_ccl_ball(context: ContextTypes.DEFAULT_TYPE, match):
             await context.bot.send_message(chat_id=chat_id,
                 text=f"Second innings started!\n🏏 Batter: {USERS[match['batting_user']]['name']}\n⚾ Bowler: {USERS[match['bowling_user']]['name']}")
         else:
-            # Match end
             if match["score"] >= match["target"]:
                 winner = USERS[match["batting_user"]]["name"]
             else:
                 winner = USERS[match["bowling_user"]]["name"]
             await context.bot.send_message(chat_id=chat_id, text=f"🏆 {winner} won the match!")
-            # Clean up
             del CCL_MATCHES[match["match_id"]]
             USER_CCL_MATCH[match["batting_user"]] = None
             USER_CCL_MATCH[match["bowling_user"]] = None
             GROUP_CCL_MATCH[chat_id].discard(match["match_id"])
             return
 
-    # Tag players and prompt next choices in DM
     batting_mention = f"[{USERS[match['batting_user']]['name']}](tg://user?id={match['batting_user']})"
     bowling_mention = f"[{USERS[match['bowling_user']]['name']}](tg://user?id={match['bowling_user']})"
     await context.bot.send_message(chat_id=chat_id,
