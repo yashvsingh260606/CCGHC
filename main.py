@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Replace with your actual bot token and admin IDs
+# Replace with your actual boot token and admin IDs
 TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 ADMIN_IDS = {123456789}  # Replace with your admin user IDs
 
