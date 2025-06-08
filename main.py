@@ -272,6 +272,7 @@ GIF_EVENTS = {"0", "4", "6", "out", "50", "100"}
 CCL_GIFS = {
     "0": [
         "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUybHM4N29ib3ZkY3JxNDhjbXlkeDAycnFtYWYyM3QxajF2eXltZ2Z4ayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/QtipHdYxYopX3W6vMs/giphy.gif",
+        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUydGc5bm4xeDVtZGlta2hsM3d2NHUxenhmcXZud2dlcnV3NDlpazl3MCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/gyBNklO4F4Rq9zFhth/giphy.gif",
         "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyeHR4NTQxeW5qaHA1eTd3NzZrbHEycTM0MDBoZm4yZDc4dXhpOGxqciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l3V0ux4nLuuUTXyi4/giphy.gif"
     ],
     "4": [
@@ -281,7 +282,8 @@ CCL_GIFS = {
     "6": [
         "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUya3R1eHhuaW85Mno1OTlycmJ2OXFibnA5NW5qc3Vid3djbXZkMjZ0NyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3oKIPoelgPeRrfqKlO/giphy.gif",
         "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyMzZnZWg2YzI5ZmVyZDJ4dWFyNWQ4bWdqbzR0b25uZTc0bWt0b2xnNCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0Iy7FYtsLxCrcDcI/giphy.gif" ,
-        "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif"
+        "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif" ,
+        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyeTk5bmZkbzBvamlkbWZrOWRraHJpanRtMGM1bGxyMXBwYzlweWc2ZSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/B8QjfpHopIzqEU4ER4/giphy.gif"
     ],
     "out": [
         "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif",
