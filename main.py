@@ -15,7 +15,7 @@ from telegram.ext import (
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # --- Configuration ---
-BOT_TOKEN = "8133604799:AAF2dE86UjRxfAdUcqyoz3O9RgaCeTwaoHM"
+BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"
 
 # --- MongoDB Setup ---
