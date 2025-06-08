@@ -142,7 +142,7 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    # For this example, admin check is omitted; add your own admin check here if needed
+    # Add your admin check here if needed
     args = context.args
     if len(args) < 2:
         await update.message.reply_text("Usage: /add <user_id> <amount>")
@@ -183,7 +183,7 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    reward = random.randint(100, 500)
+    reward = 2000  # Fixed 2,000 coins daily reward
     user_data["coins"] = user_data.get("coins", 0) + reward
     user_data["last_daily"] = now.isoformat()
     await save_user(user.id)
@@ -238,7 +238,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/profile - View your profile\n"
         "/send - Send coins (reply to user)\n"
         "/add - Admin: add coins\n"
-        "/daily - Claim daily coins reward\n"
+        "/daily - Claim daily 2,000🪙 coins reward\n"
         "/leaderboard - View top players\n"
         "/ccl <bet amount> - Start a CCL match in group (bet optional)\n"
         "/endmatch - Group admin: end ongoing CCL match in group\n"
@@ -271,29 +271,28 @@ GIF_EVENTS = {"0", "4", "6", "out", "50", "100"}
 
 CCL_GIFS = {
     "0": [
-        "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUybHM4N29ib3ZkY3JxNDhjbXlkeDAycnFtYWYyM3QxajF2eXltZ2Z4ayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/QtipHdYxYopX3W6vMs/giphy.gif",
-        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyeHR4NTQxeW5qaHA1eTd3NzZrbHEycTM0MDBoZm4yZDc4dXhpOGxqciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l3V0ux4nLuuUTXyi4/giphy.gif"
+        "https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif",
+        "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
     ],
     "4": [
-        "https://media0.giphy.com/media/3o7btXfjIjTcU64YdG/giphy.gif",
-        "https://media2.giphy.com/media/v1.Y2lkPTZjMDliOTUydHFnNzlnMm93aXhvenBmcHNwY3ZzM2d6b3FqdzFjeDcwNmVrbzNiZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/eFgMbxVJtn31Rbrbvi/giphy.gif"
+        "https://media.giphy.com/media/l0MYB8Ory7Hqefo9a/giphy.gif",
+        "https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif"
     ],
     "6": [
-        "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUya3R1eHhuaW85Mno1OTlycmJ2OXFibnA5NW5qc3Vid3djbXZkMjZ0NyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3oKIPoelgPeRrfqKlO/giphy.gif",
-        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyMzZnZWg2YzI5ZmVyZDJ4dWFyNWQ4bWdqbzR0b25uZTc0bWt0b2xnNCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l0Iy7FYtsLxCrcDcI/giphy.gif" ,
-        "https://media4.giphy.com/media/pbhDFQQfXRX8CTmZ4O/giphy.gif"
+        "https://media.giphy.com/media/3oEjI5VtIhHvK37WYo/giphy.gif",
+        "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif"
     ],
     "out": [
-        "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif",
-        "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUyaTRnd3ZleGFxMzJsMXJzN3NrajgyNDFmMW83cTlhOW9vYXJkMXZhaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LQosRo7lJKnOZLEItQ/giphy.gif"
+        "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
+        "https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif"
     ],
     "50": [
-        "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyYm5ueGVod2Z0MHcxNTF1dWVvY2EzOXo5bGxhcXdxMWFsOWl5Z3d6YyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LRsCOm65R3NHVwqiml/giphy.gif",
-        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyZnh4anZnbW1nYjllamt3eWowMndlY3BvdHlyZDdxMGsybDRrOXhjZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/kaSjUNmLgFEw6dyhOW/giphy.gif"
+        "https://media.giphy.com/media/3o7TKyQ6mQ2x2l7f7i/giphy.gif",
+        "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
     ],
     "100": [
-        "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUya3EyMXE1dzY1dXE0Y3cwMDVzb2p6c3QxbTZ0MTR6aWdvY242ZnRzdyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l1ugo9PYts0eHIRDG/giphy.gif",
-        "https://media2.giphy.com/media/v1.Y2lkPTZjMDliOTUydTF0OGE0YjlqNjk1OHUyZmZqdzAzNHFvazg1cmRlY2pzaWxieHg0OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ZAvn9tMUUJ3XjII6ry/giphy.gif"
+        "https://media.giphy.com/media/3oEjI5VtIhHvK37WYo/giphy.gif",
+        "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif"
     ],
 }
 
@@ -867,13 +866,12 @@ logger = logging.getLogger(__name__)
 
 def register_handlers(application):
     # Basic commands
-    application.add_handler(CommandHandler("daily", daily))
-    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("register", register))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("send", send))
     application.add_handler(CommandHandler("add", add))
+    application.add_handler(CommandHandler("daily", daily))  # Added daily handler
     application.add_handler(CommandHandler("leaderboard", leaderboard))
     application.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^leaderboard_"))
     application.add_handler(CommandHandler("help", help_command))
@@ -892,9 +890,10 @@ def register_handlers(application):
     application.add_handler(
         MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, bowler_text_handler), group=2
     )
- from telegram.ext import CommandHandler
 
+    # Admin command to end match (group admins allowed)
     application.add_handler(CommandHandler("endmatch", endmatch))
+
 async def on_startup(app):
     await load_users()
     logger.info("Users loaded from database. Bot is ready.")
