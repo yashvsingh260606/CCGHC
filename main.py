@@ -892,10 +892,9 @@ def register_handlers(application):
     application.add_handler(
         MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, bowler_text_handler), group=2
     )
+ from telegram.ext import CommandHandler
 
-    # Admin command to end match (group admins allowed)
     application.add_handler(CommandHandler("endmatch", endmatch))
-
 async def on_startup(app):
     await load_users()
     logger.info("Users loaded from database. Bot is ready.")
