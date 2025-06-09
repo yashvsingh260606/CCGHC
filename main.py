@@ -831,7 +831,8 @@ if is_out:
             GROUP_CCL_MATCH.pop(chat_id, None)
             CCL_MATCHES.pop(match["match_id"], None)
             return
-    else:
+   
+else:
         if match["score"] >= 50 and not match["half_century_announced"]:
             match["half_century_announced"] = True
             await send_random_event_update(context, chat_id, "50")
