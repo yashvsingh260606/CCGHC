@@ -55,8 +55,14 @@ def ensure_user(user):
             "ties": 0,
             "registered": False,
             "last_daily": None,
+            "achievements": [],  # <--- Add this line
         }
         USER_CCL_MATCH[user.id] = None
+    else:
+        # Ensure achievements field exists for old users
+        if "achievements" not in USERS[user.id]:
+            USERS[user.id]["achievements"] = []
+            
 
 async def save_user(user_id):
     try:
@@ -150,6 +156,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
     user_data = USERS[user.id]
+    achievements = user_data.get("achievements", [])
+    achievement_text = "\n".join([f"🏅 {a}" for a in achievements]) if achievements else "None"
     profile_text = (
         f"{user_data['name']}'s Profile\n\n"
         f"Name: {user_data['name']}\n"
@@ -158,10 +166,11 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Performance History:\n"
         f"Wins: {user_data.get('wins', 0)}\n"
         f"Losses: {user_data.get('losses', 0)}\n"
-        f"Ties: {user_data.get('ties', 0)}"
+        f"Ties: {user_data.get('ties', 0)}\n\n"
+        f"Achievements:\n{achievement_text}"
     )
     await update.message.reply_text(profile_text)
-
+    
 async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
@@ -260,6 +269,86 @@ async def leaderboard_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     await query.message.edit_text(text, reply_markup=markup)
     await query.answer()
+
+async def addachievement(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in BOT_ADMINS:
+        await update.message.reply_text("This command is for bot admins only.")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /addachievement <userid> <achievement>")
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+        achievement = " ".join(context.args[1:])
+    except ValueError:
+        await update.message.reply_text("User ID must be a number.")
+        return
+
+    # Ensure user is loaded
+    if target_user_id not in USERS:
+        user_data = await users_collection.find_one({"user_id": target_user_id})
+        if not user_data:
+            await update.message.reply_text(f"User with ID {target_user_id} not found.")
+            return
+        USERS[target_user_id] = user_data
+        if "achievements" not in USERS[target_user_id]:
+            USERS[target_user_id]["achievements"] = []
+
+    if achievement in USERS[target_user_id]["achievements"]:
+        await update.message.reply_text("User already has this achievement.")
+        return
+
+    USERS[target_user_id]["achievements"].append(achievement)
+    await users_collection.update_one(
+        {"user_id": target_user_id},
+        {"$set": {"achievements": USERS[target_user_id]["achievements"]}},
+        upsert=True,
+    )
+    await update.message.reply_text(f"Achievement added to user {target_user_id}.")
+
+async def removeachievement(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in BOT_ADMINS:
+        await update.message.reply_text("This command is for bot admins only.")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /removeachievement <userid> <achievement>")
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+        achievement = " ".join(context.args[1:])
+    except ValueError:
+        await update.message.reply_text("User ID must be a number.")
+        return
+
+    # Ensure user is loaded
+    if target_user_id not in USERS:
+        user_data = await users_collection.find_one({"user_id": target_user_id})
+        if not user_data:
+            await update.message.reply_text(f"User with ID {target_user_id} not found.")
+            return
+        USERS[target_user_id] = user_data
+        if "achievements" not in USERS[target_user_id]:
+            USERS[target_user_id]["achievements"] = []
+
+    if achievement not in USERS[target_user_id]["achievements"]:
+        await update.message.reply_text("User does not have this achievement.")
+        return
+
+    USERS[target_user_id]["achievements"].remove(achievement)
+    await users_collection.update_one(
+        {"user_id": target_user_id},
+        {"$set": {"achievements": USERS[target_user_id]["achievements"]}},
+        upsert=True,
+    )
+    await update.message.reply_text(f"Achievement removed from user {target_user_id}.")
+
+
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -919,7 +1008,8 @@ def register_handlers(application):
     application.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^leaderboard_"))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("remove", remove))
-
+    application.add_handler(CommandHandler("addachievement", addachievement))
+    application.add_handler(CommandHandler("removeachievement", removeachievement))
 
     # CCL commands and callbacks
     application.add_handler(CommandHandler("ccl", ccl_command))
