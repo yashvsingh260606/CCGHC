@@ -812,7 +812,7 @@ if is_out:
             text=f"Innings break! Target for second innings: {match['target']}"
         )
         
-        else:
+    else:
             # Tie check fix:
             if match["score"] == match["target"] - 1:
                 await context.bot.send_message(chat_id=chat_id, text="🤝 The match is a tie!")
