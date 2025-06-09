@@ -19,7 +19,11 @@ from motor.motor_asyncio import AsyncIOMotorClient
  # Replace with your own Telegram user IDs
 BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your bot token
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB URI
+# --- Configuration ---
 
+# List of Telegram user IDs who are bot admins
+# Replace with your own Telegram user IDs
+BOT_ADMINS = [123456789, 987654321]  # <--- Replace these with your Telegram user IDs
 # --- MongoDB Setup ---
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
@@ -85,7 +89,52 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Welcome to HandCricket, {USERS[user.id]['name']}!\nUse /register to get 4000🪙 coins."
     )
+async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    # Replace with your actual bot admin check function or list
+    if user_id not in BOT_ADMINS:
+        await update.message.reply_text("This command is for bot admins only.")
+        return
 
+    args = context.args
+    if len(args) != 2:
+        await update.message.reply_text("Usage: /remove <userid> <amount>")
+        return
+
+    try:
+        target_user_id = int(args[0])
+        amount = int(args[1])
+        if amount <= 0:
+            await update.message.reply_text("Amount must be positive.")
+            return
+    except ValueError:
+        await update.message.reply_text("User ID and amount must be numbers.")
+        return
+
+    # Ensure target user exists in USERS, otherwise load from DB
+    if target_user_id not in USERS:
+        user_data = await users_collection.find_one({"user_id": target_user_id})
+        if not user_data:
+            await update.message.reply_text(f"User with ID {target_user_id} not found.")
+            return
+        USERS[target_user_id] = user_data
+
+    current_coins = USERS[target_user_id].get("coins", 0)
+    new_coins = max(0, current_coins - amount)
+    USERS[target_user_id]["coins"] = new_coins
+
+    # Save to MongoDB
+    await users_collection.update_one(
+        {"user_id": target_user_id},
+        {"$set": {"coins": new_coins}},
+        upsert=True,
+    )
+
+    await update.message.reply_text(
+        f"✅ Removed {amount} coins from user {target_user_id}.\n"
+        f"New balance: {new_coins}🪙"
+    )
+    
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
@@ -869,7 +918,8 @@ def register_handlers(application):
     application.add_handler(CommandHandler("leaderboard", leaderboard))
     application.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^leaderboard_"))
     application.add_handler(CommandHandler("help", help_command))
-    
+    application.add_handler(CommandHandler("remove", remove))
+
 
     # CCL commands and callbacks
     application.add_handler(CommandHandler("ccl", ccl_command))
