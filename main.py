@@ -796,15 +796,22 @@ async def process_ball(context: ContextTypes.DEFAULT_TYPE, match):
 
     # Handle innings and match end
     if is_out:
-        if match["innings"] == 1:
-            match["target"] = match["score"] + 1
-            match["innings"] = 2
-            match["balls"] = 0
-            match["score"] = 0
-            match["batting_user"], match["bowling_user"] = match["bowling_user"], match["batting_user"]
-            match["half_century_announced"] = False
-            match["century_announced"] = False
-            await context.bot.send_message(chat_id=chat_id, text=f"Innings break! Target for second innings: {match['target']}")
+    if match["innings"] == 1:
+        match["target"] = match["score"] + 1
+        match["innings"] = 2
+        match["balls"] = 0
+        match["score"] = 0
+        # Swap batting and bowling user safely
+        temp = match["batting_user"]
+        match["batting_user"] = match["bowling_user"]
+        match["bowling_user"] = temp
+        match["half_century_announced"] = False
+        match["century_announced"] = False
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"Innings break! Target for second innings: {match['target']}"
+        )
+        
         else:
             # Tie check fix:
             if match["score"] == match["target"] - 1:
