@@ -23,7 +23,7 @@ MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlw
 
 # List of Telegram user IDs who are bot admins
 # Replace with your own Telegram user IDs
-BOT_ADMINS = [123456789, 987654321]  # <--- Replace these with your Telegram user IDs
+BOT_ADMINS = [7361215114, 987654321]  # <--- Replace these with your Telegram user IDs
 # --- MongoDB Setup ---
 mongo_client = AsyncIOMotorClient(MONGO_URL)
 db = mongo_client.handcricket
