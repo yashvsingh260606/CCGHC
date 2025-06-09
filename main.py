@@ -846,7 +846,7 @@ else:
             await finish_match(context, match, winner=match["batting_user"])
             return
 
-    try:
+try:
         await context.bot.send_message(
             chat_id=match["batting_user"],
             text="🏏 Send your shot number (0,1,2,3,4,6):"
