@@ -795,7 +795,7 @@ async def process_ball(context: ContextTypes.DEFAULT_TYPE, match):
     await context.bot.send_message(chat_id=chat_id, text=f"Current Score: {match['score']}")
 
     # Handle innings and match end
-    if is_out:
+if is_out:
     if match["innings"] == 1:
         match["target"] = match["score"] + 1
         match["innings"] = 2
