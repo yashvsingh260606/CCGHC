@@ -16,7 +16,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 # --- Configuration ---
 # List of Telegram user IDs who are bot admins
-BOT_ADMINS = [123456789, 987654321]  # Replace with your own Telegram user IDs
+ # Replace with your own Telegram user IDs
 BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your bot token
 MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB URI
 
@@ -141,94 +141,7 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ {user.first_name} sent {amount}🪙 to {receiver['name']}."
     )
-def is_bot_admin(user_id):
-    return user_id in BOT_ADMINS
 
-def add_command(update, context):
-    user_id = update.effective_user.id
-    if not is_bot_admin(user_id):
-        update.message.reply_text("This command is for bot admins only.")
-        return
-
-    args = context.args
-    if len(args) != 2:
-        update.message.reply_text("Usage: /add <userid> <amount>")
-        return
-
-    try:
-        target_user_id = int(args[0])
-        amount = int(args[1])
-        if amount <= 0:
-            update.message.reply_text("Amount must be positive.")
-            return
-    except ValueError:
-        update.message.reply_text("User ID and amount must be numbers.")
-        return
-
-    user_balances[target_user_id] = user_balances.get(target_user_id, 0) + amount
-
-    update.message.reply_text(
-        f"✅ Added {amount} coins to user {target_user_id}.\n"
-        f"New balance: {user_balances[target_user_id]}"
-    )
-def remove_command(update, context):
-    user_id = update.effective_user.id
-    if not is_bot_admin(user_id):
-        update.message.reply_text("This command is for bot admins only.")
-        return
-
-    args = context.args
-    if len(args) != 2:
-        update.message.reply_text("Usage: /remove <userid> <amount>")
-        return
-
-    try:
-        target_user_id = int(args[0])
-        amount = int(args[1])
-        if amount <= 0:
-            update.message.reply_text("Amount must be positive.")
-            return
-    except ValueError:
-        update.message.reply_text("User ID and amount must be numbers.")
-        return
-
-    current = user_balances.get(target_user_id, 0)
-    new_balance = max(0, current - amount)
-    user_balances[target_user_id] = new_balance
-    update.message.reply_text(
-        f"✅ Removed {amount} coins from user {target_user_id}.\n"
-        f"New balance: {user_balances[target_user_id]}"
-    )
-def broad_command(update, context):
-    user_id = update.effective_user.id
-    if not is_bot_admin(user_id):
-        update.message.reply_text("This command is for bot admins only.")
-        return
-
-    if not context.args:
-        update.message.reply_text("Usage: /broad <message>")
-        return
-
-    message = " ".join(context.args)
-    count = 0
-
-    # Send to all users (DMs)
-    for uid in all_user_ids:
-        try:
-            context.bot.send_message(chat_id=uid, text=message)
-            count += 1
-        except Exception as e:
-            print(f"Failed to send to user {uid}: {e}")
-
-    # Send to all groups
-    for gid in all_group_ids:
-        try:
-            context.bot.send_message(chat_id=gid, text=message)
-            count += 1
-        except Exception as e:
-            print(f"Failed to send to group {gid}: {e}")
-
-    update.message.reply_text(f"Broadcast sent to {count} chats.")
     
 async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -795,24 +708,17 @@ async def process_ball(context: ContextTypes.DEFAULT_TYPE, match):
     await context.bot.send_message(chat_id=chat_id, text=f"Current Score: {match['score']}")
 
     # Handle innings and match end
-if is_out:
-    if match["innings"] == 1:
-        match["target"] = match["score"] + 1
-        match["innings"] = 2
-        match["balls"] = 0
-        match["score"] = 0
-        # Swap batting and bowling user safely
-        temp = match["batting_user"]
-        match["batting_user"] = match["bowling_user"]
-        match["bowling_user"] = temp
-        match["half_century_announced"] = False
-        match["century_announced"] = False
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"Innings break! Target for second innings: {match['target']}"
-        )
-        
-    else:
+    if is_out:
+        if match["innings"] == 1:
+            match["target"] = match["score"] + 1
+            match["innings"] = 2
+            match["balls"] = 0
+            match["score"] = 0
+            match["batting_user"], match["bowling_user"] = match["bowling_user"], match["batting_user"]
+            match["half_century_announced"] = False
+            match["century_announced"] = False
+            await context.bot.send_message(chat_id=chat_id, text=f"Innings break! Target for second innings: {match['target']}")
+        else:
             # Tie check fix:
             if match["score"] == match["target"] - 1:
                 await context.bot.send_message(chat_id=chat_id, text="🤝 The match is a tie!")
@@ -831,8 +737,7 @@ if is_out:
             GROUP_CCL_MATCH.pop(chat_id, None)
             CCL_MATCHES.pop(match["match_id"], None)
             return
-   
-else:
+    else:
         if match["score"] >= 50 and not match["half_century_announced"]:
             match["half_century_announced"] = True
             await send_random_event_update(context, chat_id, "50")
@@ -846,7 +751,7 @@ else:
             await finish_match(context, match, winner=match["batting_user"])
             return
 
-try:
+    try:
         await context.bot.send_message(
             chat_id=match["batting_user"],
             text="🏏 Send your shot number (0,1,2,3,4,6):"
@@ -959,13 +864,12 @@ def register_handlers(application):
     application.add_handler(CommandHandler("register", register))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("send", send))
-    application.add_handler(CommandHandler("add", add))
+    
     application.add_handler(CommandHandler("daily", daily))  # Added daily handler
     application.add_handler(CommandHandler("leaderboard", leaderboard))
     application.add_handler(CallbackQueryHandler(leaderboard_callback, pattern=r"^leaderboard_"))
     application.add_handler(CommandHandler("help", help_command))
-    dispatcher.add_handler(CommandHandler('remove', remove_command))
-dispatcher.add_handler(CommandHandler('broad', broad_command))
+    
 
     # CCL commands and callbacks
     application.add_handler(CommandHandler("ccl", ccl_command))
@@ -1001,4 +905,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
     
+   
