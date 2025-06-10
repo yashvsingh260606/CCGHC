@@ -201,84 +201,98 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 import io
+from telegram import InputFile
 
-async def generate_profile_card(user_data):
-    width, height = 600, 400
-
-    # Create a gradient background
-    base = Image.new("RGB", (width, height), "#232526")
-    top = Image.new("RGB", (width, height), "#ff9800")  # Orange accent
-    mask = Image.new("L", (width, height))
-    mask_data = []
-    for y in range(height):
-        mask_data.extend([int(255 * (y / height))] * width)
-    mask.putdata(mask_data)
-    base.paste(top, (0, 0), mask)
-
-    draw = ImageDraw.Draw(base)
-
-    # Fonts
-    try:
-        font_large = ImageFont.truetype("arial.ttf", 38)
-        font_medium = ImageFont.truetype("arial.ttf", 26)
-        font_small = ImageFont.truetype("arial.ttf", 18)
-    except:
-        font_large = font_medium = font_small = ImageFont.load_default()
-
-    # Card border
-    draw.rectangle([(10, 10), (width-10, height-10)], outline="#FFD700", width=4)
-
-    # Header section
-    draw.rectangle([(10, 10), (width-10, 70)], fill="#424242")
-    draw.text((30, 20), f"{user_data['name']}'s Profile", font=font_large, fill="#FFD700")
-
-    # Horizontal line under header
-    draw.line([(10, 70), (width-10, 70)], fill="#FFD700", width=3)
-
-    # Basic Info
-    draw.text((30, 90), f"User ID: {user_data['user_id']}", font=font_small, fill="#FFF")
-    draw.text((30, 120), f"Coins: {user_data.get('coins', 0)} 🪙", font=font_medium, fill="#FFF")
-
-    # Performance Section
-    draw.rectangle([(20, 160), (width-20, 220)], fill="#333", outline="#ff9800", width=2)
-    draw.text((40, 170), "Performance:", font=font_medium, fill="#ff9800")
-    draw.text((60, 200), f"Wins: {user_data.get('wins', 0)}", font=font_small, fill="#FFF")
-    draw.text((200, 200), f"Losses: {user_data.get('losses', 0)}", font=font_small, fill="#FFF")
-    draw.text((360, 200), f"Ties: {user_data.get('ties', 0)}", font=font_small, fill="#FFF")
-
-    # Achievements Section
-    draw.rectangle([(20, 240), (width-20, 370)], fill="#222", outline="#FFD700", width=2)
-    draw.text((40, 250), "Achievements:", font=font_medium, fill="#FFD700")
-    achievements = user_data.get("achievements", [])
-    if achievements:
-        for i, ach in enumerate(achievements[:4]):
-            draw.text((60, 290 + i*25), f"🏅 {ach}", font=font_small, fill="#FFF")
-    else:
-        draw.text((60, 290), "None", font=font_small, fill="#FFF")
-
-    # Footer line
-    draw.line([(10, height-30), (width-10, height-30)], fill="#FFD700", width=2)
-    draw.text((width-180, height-25), "HandCricket Bot", font=font_small, fill="#FFD700")
-
-    # Save to buffer
-    buffer = io.BytesIO()
-    base.save(buffer, format="PNG")
-    buffer.seek(0)
-    return buffer
-    
 async def profilecard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user)
     user_data = USERS[user.id]
-    image_buffer = await generate_profile_card(user_data)
-    await update.message.reply_photo(
-        photo=InputFile(image_buffer, filename="profile.png"),
-        caption=f"{user_data['name']}'s HandCricket Profile Card"
-    )
     
+    # Generate and send the profile card
+    buffer = await create_profile_card(user_data)
+    await update.message.reply_photo(
+        photo=InputFile(buffer, filename="profile_card.png"),
+        caption=f"🏏 {user_data['name']}'s HandCricket Profile"
+    )
+
+async def create_profile_card(user_data):
+    # Card dimensions
+    width, height = 600, 400
+    
+    # Create a new image with a dark blue gradient background
+    image = Image.new('RGB', (width, height), color=(25, 25, 40))
+    draw = ImageDraw.Draw(image)
+    
+    # Create gradient effect (top to bottom)
+    for y in range(height):
+        # Gradient from dark blue to slightly lighter blue
+        r = int(25 + (y / height) * 15)
+        g = int(25 + (y / height) * 15)
+        b = int(40 + (y / height) * 30)
+        draw.line([(0, y), (width, y)], fill=(r, g, b))
+    
+    # Try to load fonts, fall back to default if not available
+    try:
+        title_font = ImageFont.truetype("arial.ttf", 36)
+        header_font = ImageFont.truetype("arial.ttf", 24)
+        normal_font = ImageFont.truetype("arial.ttf", 20)
+    except:
+        # Use default font if custom font fails
+        title_font = ImageFont.load_default()
+        header_font = ImageFont.load_default()
+        normal_font = ImageFont.load_default()
+    
+    # Draw gold border around the card
+    border_color = (255, 215, 0)  # Gold
+    border_width = 5
+    draw.rectangle([(0, 0), (width-1, height-1)], outline=border_color, width=border_width)
+    
+    # Header section with user name
+    header_bg = (40, 40, 80)
+    draw.rectangle([(border_width, border_width), (width-border_width, 70)], fill=header_bg)
+    draw.text((30, 15), f"{user_data['name']}'s Profile", font=title_font, fill=(255, 215, 0))
+    
+    # Draw horizontal separator line
+    draw.line([(20, 80), (width-20, 80)], fill=border_color, width=2)
+    
+    # User info section
+    draw.text((30, 100), f"ID: {user_data['user_id']}", font=normal_font, fill=(220, 220, 220))
+    draw.text((30, 130), f"Coins: {user_data.get('coins', 0)} 🪙", font=header_font, fill=(255, 255, 255))
+    
+    # Stats section with box
+    stats_box_color = (50, 50, 90, 180)
+    draw.rectangle([(20, 170), (width-20, 260)], fill=stats_box_color, outline=border_color, width=2)
+    draw.text((30, 180), "Performance Stats:", font=header_font, fill=(255, 215, 0))
+    
+    # Draw stats with icons
+    draw.text((40, 215), f"🏆 Wins: {user_data.get('wins', 0)}", font=normal_font, fill=(255, 255, 255))
+    draw.text((240, 215), f"❌ Losses: {user_data.get('losses', 0)}", font=normal_font, fill=(255, 255, 255))
+    draw.text((440, 215), f"🤝 Ties: {user_data.get('ties', 0)}", font=normal_font, fill=(255, 255, 255))
+    
+    # Achievements section with box
+    achievements = user_data.get("achievements", [])
+    achieve_box_color = (50, 50, 90, 180)
+    draw.rectangle([(20, 280), (width-20, 370)], fill=achieve_box_color, outline=border_color, width=2)
+    draw.text((30, 290), "Achievements:", font=header_font, fill=(255, 215, 0))
+    
+    # List achievements or show "None"
+    if achievements:
+        y_pos = 325
+        for i, achievement in enumerate(achievements[:3]):  # Show up to 3 achievements
+            draw.text((40, y_pos), f"🏅 {achievement}", font=normal_font, fill=(255, 255, 255))
+            y_pos += 30
+    else:
+        draw.text((40, 325), "No achievements yet", font=normal_font, fill=(200, 200, 200))
+    
+    # Convert the image to bytes
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+    
+
 
     
 async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
