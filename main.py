@@ -200,12 +200,10 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ {user.first_name} sent {amount}🪙 to {receiver['name']}."
     )
 
-
 import io
-from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 import requests
+from PIL import Image
 
-# --- Fetch Telegram Profile Photo ---
 async def get_user_profile_photo(context, user_id):
     photos = await context.bot.get_user_profile_photos(user_id, limit=1)
     if photos.total_count > 0:
@@ -216,7 +214,8 @@ async def get_user_profile_photo(context, user_id):
     else:
         return None  # No photo, will use placeholder
 
-# --- Create Fiery Modern Card (Call this in your /profilecard command) ---
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
 async def create_modern_profile_card(user_data, profile_photo):
     width, height = 700, 350
     left_w = 270
@@ -228,7 +227,7 @@ async def create_modern_profile_card(user_data, profile_photo):
 
     # --- Smooth, rounded, fiery left panel ---
     left_panel = Image.new("RGBA", (left_w, height), (0, 0, 0, 0))
-    lp_draw = ImageDraw.Draw(left_panel)
+    grad = Image.new("RGBA", (left_w, height))
     for y in range(height):
         # Multi-stop fiery gradient: dark red -> orange -> gold
         if y < height * 0.5:
@@ -239,11 +238,13 @@ async def create_modern_profile_card(user_data, profile_photo):
             r = int(180 + ((y - height * 0.5) / (height * 0.5)) * 55)
             g = int(80 + ((y - height * 0.5) / (height * 0.5)) * 140)
             b = int(70 + ((y - height * 0.5) / (height * 0.5)) * 60)
-        lp_draw.line([(0, y), (left_w, y)], fill=(r, g, b, 255))
+        for x in range(left_w):
+            grad.putpixel((x, y), (r, g, b, 255))
     # Rounded rectangle mask for smooth corners
     mask = Image.new("L", (left_w, height), 0)
     ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (left_w, height)], 60, fill=255)
-    left_panel.putalpha(mask)
+    grad.putalpha(mask)
+    left_panel = grad
     card.paste(left_panel, (0, 0), left_panel)
 
     # --- Profile Picture (real or placeholder) ---
@@ -314,11 +315,10 @@ async def create_modern_profile_card(user_data, profile_photo):
     card.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
-        
-    
-    
-    
-    
+
+
+
+
 async def profilecard(update, context):
     user = update.effective_user
     ensure_user(user)
