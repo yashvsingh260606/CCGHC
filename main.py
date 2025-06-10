@@ -200,6 +200,60 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ {user.first_name} sent {amount}🪙 to {receiver['name']}."
     )
 
+from PIL import Image, ImageDraw, ImageFont
+import io
+from telegram import InputFile
+
+async def generate_profile_card(user_data):
+    width, height = 600, 400
+    bg_color = (30, 30, 30)
+    text_color = (255, 255, 255)
+    accent_color = (255, 215, 0)
+
+    img = Image.new("RGB", (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
+
+    # Use default font if arial.ttf not found
+    try:
+        font_large = ImageFont.truetype("arial.ttf", 40)
+        font_medium = ImageFont.truetype("arial.ttf", 28)
+        font_small = ImageFont.truetype("arial.ttf", 20)
+    except:
+        font_large = font_medium = font_small = ImageFont.load_default()
+
+    draw.text((30, 30), f"{user_data['name']}'s Profile", font=font_large, fill=accent_color)
+    draw.text((30, 90), f"User ID: {user_data['user_id']}", font=font_small, fill=text_color)
+    draw.text((30, 120), f"Coins: {user_data.get('coins', 0)} 🪙", font=font_medium, fill=text_color)
+
+    draw.text((30, 170), "Performance:", font=font_medium, fill=accent_color)
+    draw.text((50, 210), f"Wins: {user_data.get('wins', 0)}", font=font_small, fill=text_color)
+    draw.text((50, 240), f"Losses: {user_data.get('losses', 0)}", font=font_small, fill=text_color)
+    draw.text((50, 270), f"Ties: {user_data.get('ties', 0)}", font=font_small, fill=text_color)
+
+    # Achievements (if any)
+    achievements = user_data.get("achievements", [])
+    draw.text((30, 320), "Achievements:", font=font_medium, fill=accent_color)
+    if achievements:
+        for i, ach in enumerate(achievements[:5]):
+            draw.text((50, 360 + i*25), f"🏅 {ach}", font=font_small, fill=text_color)
+    else:
+        draw.text((50, 360), "None", font=font_small, fill=text_color)
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
+async def profilecard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    ensure_user(user)
+    user_data = USERS[user.id]
+
+    image_buffer = await generate_profile_card(user_data)
+    await update.message.reply_photo(photo=InputFile(image_buffer, filename="profile.png"),
+                                     caption=f"{user_data['name']}'s HandCricket Profile Card")
+    
+
     
 async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1010,6 +1064,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("remove", remove))
     application.add_handler(CommandHandler("addachievement", addachievement))
     application.add_handler(CommandHandler("removeachievement", removeachievement))
+    application.add_handler(CommandHandler("profilecard", profilecard))
 
     # CCL commands and callbacks
     application.add_handler(CommandHandler("ccl", ccl_command))
