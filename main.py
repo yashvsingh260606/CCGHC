@@ -207,7 +207,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     # Only allow admins
-    if user_id not in ADMIN_IDS:
+    if user_id not in BOT_ADMINS:
         await update.message.reply_text("You are not authorized to use this command.")
         return
 
