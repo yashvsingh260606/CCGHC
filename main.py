@@ -38,7 +38,7 @@ USERS = {}  # user_id -> user dict
 CCL_MATCHES = {}  # match_id -> match dict
 USER_CCL_MATCH = {}  # user_id -> match_id or None
 GROUP_CCL_MATCH = {}  # group_chat_id -> match_id or None
-
+TOTAL_MATCHES_PLAYED = 0
 # --- Helper Functions ---
 
 def get_username(user):
@@ -199,6 +199,31 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ {user.first_name} sent {amount}🪙 to {receiver['name']}."
     )
+
+import time
+
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    start_time = time.time()
+
+    # Calculate latency
+    await update.message.reply_text("Pinging...")
+    end_time = time.time()
+    latency_ms = int((end_time - start_time) * 1000)
+
+    total_users = len(USERS)
+    total_groups = len(set(GROUP_CCL_MATCH.keys()))
+    active_matches = len(CCL_MATCHES)
+    total_matches = TOTAL_MATCHES_PLAYED
+
+    text = (
+        f"🏓 *Pong!*\n"
+        f"📶 *Latency:* `{latency_ms}ms`\n"
+        f"👤 *Users:* `{total_users}`\n"
+        f"👥 *Groups:* `{total_groups}`\n"
+        f"🎮 *Active Matches:* `{active_matches}`\n"
+        f"📊 *Total Matches Played:* `{total_matches}`"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
@@ -768,9 +793,15 @@ async def ccl_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer(f"You don't have enough coins to join this {bet_amount}🪙 bet match.", show_alert=True)
         return
 
+    
     match["opponent"] = user.id
     match["state"] = "toss"
     USER_CCL_MATCH[user.id] = match_id
+
+    # ✅ Add this here
+    global TOTAL_MATCHES_PLAYED
+    TOTAL_MATCHES_PLAYED += 1
+
     chat_id = match["group_id"]
     message_id = match["message_id"]
     await context.bot.edit_message_text(
@@ -1179,7 +1210,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("removeachievement", removeachievement))
     application.add_handler(CommandHandler("profilecard", profilecard))
     application.add_handler(CommandHandler("broadcast", broadcast))
-
+    application.add_handler(CommandHandler("ping", ping))
     # CCL commands and callbacks
     application.add_handler(CommandHandler("ccl", ccl_command))
     application.add_handler(CallbackQueryHandler(ccl_join_callback, pattern=r"^ccl_join_"))
