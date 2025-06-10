@@ -205,86 +205,96 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 from telegram import InputFile
 
-async def create_royal_profile_card(user_data):
-    # Card size and colors
-    width, height = 700, 420
-    gold = (255, 215, 0)
-    deep_blue = (18, 32, 47)
-    purple = (80, 36, 143)
-    pink = (255, 80, 180)
-    white = (255, 255, 255)
-    shadow = (0, 0, 0, 90)
+async def create_fiery_profile_card(user_data):
+    # Card dimensions
+    width, height = 700, 350
+    left_w = 290
+    right_w = width - left_w
 
-    # --- Card base with gradient ---
-    base = Image.new("RGB", (width, height), deep_blue)
-    grad = Image.new("RGBA", (width, height))
+    # Create base image (white background)
+    card = Image.new("RGB", (width, height), (245, 245, 245))
+    draw = ImageDraw.Draw(card)
+
+    # --- Left Panel: Fiery gradient with gold & black ---
+    left_panel = Image.new("RGBA", (left_w, height))
+    lp_draw = ImageDraw.Draw(left_panel)
     for y in range(height):
-        r = int(deep_blue[0] + (purple[0] - deep_blue[0]) * y / height)
-        g = int(deep_blue[1] + (purple[1] - deep_blue[1]) * y / height)
-        b = int(deep_blue[2] + (purple[2] - deep_blue[2]) * y / height)
-        for x in range(width):
-            grad.putpixel((x, y), (r, g, b, 255))
-    base = Image.alpha_composite(base.convert("RGBA"), grad)
+        # Fiery gradient: black -> dark red -> gold
+        r = int(30 + (y / height) * 180)
+        g = int(20 + (y / height) * 120)
+        b = int(20 + (y / height) * 30)
+        if y > height * 0.5:
+            r = int(200 + (y / height) * 55)
+            g = int(140 + (y / height) * 80)
+            b = int(40 + (y / height) * 20)
+        lp_draw.line([(0, y), (left_w, y)], fill=(r, g, b, 255))
+    # Rounded corners
+    mask = Image.new("L", (left_w, height), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (left_w, height)], 60, fill=255)
+    left_panel.putalpha(mask)
+    card.paste(left_panel, (0, 0), left_panel)
 
-    # --- Soft shadow for 3D effect ---
-    shadow_img = Image.new("RGBA", (width + 40, height + 40), (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow_img)
-    shadow_draw.rounded_rectangle([(20, 20), (width + 20, height + 20)], 30, fill=shadow)
-    shadow_img = shadow_img.filter(ImageFilter.GaussianBlur(10))
-    card_img = Image.new("RGBA", shadow_img.size, (0, 0, 0, 0))
-    card_img.paste(shadow_img, (0, 0))
-    card_img.paste(base, (20, 20), base)
-    draw = ImageDraw.Draw(card_img)
+    # --- Avatar Placeholder (circle) ---
+    avatar_radius = 70
+    avatar_center = (left_w // 2, height // 2 - 30)
+    avatar_bg = Image.new("RGBA", (avatar_radius * 2, avatar_radius * 2), (0, 0, 0, 0))
+    av_draw = ImageDraw.Draw(avatar_bg)
+    av_draw.ellipse((0, 0, avatar_radius * 2, avatar_radius * 2), fill=(255, 215, 0, 255))
+    av_draw.ellipse((10, 10, avatar_radius * 2 - 10, avatar_radius * 2 - 10), fill=(30, 30, 30, 255))
+    card.paste(avatar_bg, (avatar_center[0] - avatar_radius, avatar_center[1] - avatar_radius), avatar_bg)
 
-    # --- Glossy overlay ---
-    gloss = Image.new("RGBA", (width, height), (255, 255, 255, 0))
-    gloss_draw = ImageDraw.Draw(gloss)
-    gloss_draw.pieslice([0, 0, width, height * 2], 180, 360, fill=(255, 255, 255, 60))
-    card_img.paste(gloss, (20, 20), gloss)
-
-    # --- Gold border ---
-    draw.rounded_rectangle([(20, 20), (width + 20, height + 20)], 30, outline=gold, width=6)
-
-    # --- Fonts ---
+    # --- User name on left ---
     try:
-        title_font = ImageFont.truetype("arialbd.ttf", 38)
-        header_font = ImageFont.truetype("arialbd.ttf", 26)
-        normal_font = ImageFont.truetype("arial.ttf", 22)
+        name_font = ImageFont.truetype("arialbd.ttf", 24)
     except:
-        title_font = header_font = normal_font = ImageFont.load_default()
+        name_font = ImageFont.load_default()
+    name = user_data['name']
+    w, h = draw.textsize(name, font=name_font)
+    draw.text((avatar_center[0] - w // 2, avatar_center[1] + avatar_radius + 10), name, font=name_font, fill=(255, 215, 0))
 
-    # --- Header ---
-    draw.text((60, 45), f"{user_data['name']}'s Royal Card", font=title_font, fill=gold, stroke_width=2, stroke_fill=deep_blue)
+    # --- Right Panel: White with gold/black accents ---
+    try:
+        header_font = ImageFont.truetype("arialbd.ttf", 22)
+        normal_font = ImageFont.truetype("arial.ttf", 18)
+    except:
+        header_font = normal_font = ImageFont.load_default()
+    # Stats
+    stats_y = 60
+    draw.text((left_w + 40, stats_y), "🏏 HandCricket Profile", font=header_font, fill=(30, 30, 30))
+    stats_y += 40
+    draw.text((left_w + 40, stats_y), f"ID: {user_data['user_id']}", font=normal_font, fill=(80, 80, 80))
+    stats_y += 30
+    draw.text((left_w + 40, stats_y), f"Coins: {user_data.get('coins', 0)} 🪙", font=normal_font, fill=(255, 215, 0))
+    stats_y += 30
+    draw.text((left_w + 40, stats_y), f"Wins: {user_data.get('wins', 0)}", font=normal_font, fill=(40, 40, 40))
+    stats_y += 25
+    draw.text((left_w + 40, stats_y), f"Losses: {user_data.get('losses', 0)}", font=normal_font, fill=(40, 40, 40))
+    stats_y += 25
+    draw.text((left_w + 40, stats_y), f"Ties: {user_data.get('ties', 0)}", font=normal_font, fill=(40, 40, 40))
 
-    # --- Coins ---
-    draw.text((60, 105), f"Coins:", font=header_font, fill=pink)
-    draw.text((180, 105), f"{user_data.get('coins', 0)} 🪙", font=header_font, fill=white)
-
-    # --- Stats Section ---
-    draw.rounded_rectangle([(60, 150), (640, 210)], 20, fill=(30, 20, 60, 230), outline=gold, width=2)
-    draw.text((80, 165), f"🏆 Wins: {user_data.get('wins', 0)}", font=normal_font, fill=white)
-    draw.text((250, 165), f"❌ Losses: {user_data.get('losses', 0)}", font=normal_font, fill=white)
-    draw.text((440, 165), f"🤝 Ties: {user_data.get('ties', 0)}", font=normal_font, fill=white)
-
-    # --- Achievements Section ---
-    draw.rounded_rectangle([(60, 230), (640, 340)], 20, fill=(40, 10, 60, 200), outline=gold, width=2)
-    draw.text((80, 245), "Achievements:", font=header_font, fill=gold)
+    # Achievements
+    ach_y = stats_y + 40
+    draw.text((left_w + 40, ach_y), "Achievements:", font=header_font, fill=(255, 140, 0))
+    ach_y += 30
     achievements = user_data.get("achievements", [])
     if achievements:
         for i, ach in enumerate(achievements[:4]):
-            draw.text((100, 285 + i * 25), f"🏅 {ach}", font=normal_font, fill=white)
+            draw.text((left_w + 60, ach_y + i * 25), f"🏅 {ach}", font=normal_font, fill=(80, 80, 80))
     else:
-        draw.text((100, 285), "No achievements yet", font=normal_font, fill=white)
+        draw.text((left_w + 60, ach_y), "No achievements yet", font=normal_font, fill=(120, 120, 120))
 
-    # --- Footer ---
-    draw.text((width - 300, height + 10), "HandCricket Bot • Royal Edition", font=normal_font, fill=gold)
+    # Social/branding icons (optional, here just as gold dots)
+    for i in range(4):
+        draw.ellipse((left_w + 320, 80 + i * 40, left_w + 340, 100 + i * 40), fill=(255, 215, 0))
 
-    # --- Save as PNG buffer ---
+    # Save to buffer
     buffer = io.BytesIO()
-    card_img = card_img.convert("RGB")
-    card_img.save(buffer, format="PNG")
+    card.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+    
+    
+    
     
 async def profilecard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
