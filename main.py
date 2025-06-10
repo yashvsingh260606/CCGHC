@@ -201,24 +201,24 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
- from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 from telegram import InputFile
 
 async def create_modern_profile_card(user_data):
     width, height = 700, 350
     left_w = 280
-    right_w = width - left_w
 
     # Background
     card = Image.new("RGB", (width, height), (245, 247, 235))
     draw = ImageDraw.Draw(card)
 
-    # --- Left Panel: Wavy, fiery gradient ---
+    # --- Left Panel: Gradient with wavy edge ---
     left_panel = Image.new("RGBA", (left_w, height), (0, 0, 0, 0))
     lp_draw = ImageDraw.Draw(left_panel)
     for y in range(height):
-        # Gradient: dark red -> gold
+        # Gradient: dark red to gold
         if y < height * 0.5:
             r = int(140 + (y / (height * 0.5)) * 50)
             g = int(30 + (y / (height * 0.5)) * 40)
@@ -252,11 +252,13 @@ async def create_modern_profile_card(user_data):
         name_font = ImageFont.truetype("arialbd.ttf", 22)
     except:
         name_font = ImageFont.load_default()
-    name = user_data['name']
-    w, h = draw.textsize(name, font=name_font)
-    draw.text((avatar_center[0] - w // 2, avatar_center[1] + avatar_radius + 10), name, font=name_font, fill=(255, 215, 0))
+    # Use getsize or textbbox for Pillow >= 10
+    bbox = draw.textbbox((0, 0), user_data['name'], font=name_font)
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    draw.text((avatar_center[0] - w // 2, avatar_center[1] + avatar_radius + 10), user_data['name'], font=name_font, fill=(255, 215, 0))
 
     # --- Right Panel: White with rounded corners ---
+    right_w = width - left_w
     right_panel = Image.new("RGBA", (right_w, height), (255, 255, 255, 255))
     rp_draw = ImageDraw.Draw(right_panel)
     rp_mask = Image.new("L", (right_w, height), 0)
@@ -298,6 +300,7 @@ async def create_modern_profile_card(user_data):
     card.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+    
     
     
 
