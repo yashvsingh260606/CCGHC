@@ -201,72 +201,80 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 import io
-from telegram import InputFile
 
-async def create_modern_profile_card(user_data):
+async def create_fiery_gold_profile_card(user_data, context):
     width, height = 700, 350
     left_w = 280
+    right_w = width - left_w
 
-    # Background
-    card = Image.new("RGB", (width, height), (245, 247, 235))
+    # --- Card Base ---
+    card = Image.new("RGB", (width, height), (20, 20, 20))
     draw = ImageDraw.Draw(card)
 
-    # --- Left Panel: Gradient with wavy edge ---
+    # --- Fiery Left Panel Gradient ---
     left_panel = Image.new("RGBA", (left_w, height), (0, 0, 0, 0))
     lp_draw = ImageDraw.Draw(left_panel)
     for y in range(height):
-        # Gradient: dark red to gold
-        if y < height * 0.5:
-            r = int(140 + (y / (height * 0.5)) * 50)
-            g = int(30 + (y / (height * 0.5)) * 40)
-            b = int(60 + (y / (height * 0.5)) * 30)
+        # Multi-stop fiery gradient: black → red → orange → gold
+        if y < height * 0.33:
+            r = int(30 + (y / (height * 0.33)) * 100)
+            g = int(20 + (y / (height * 0.33)) * 10)
+            b = int(20 + (y / (height * 0.33)) * 20)
+        elif y < height * 0.66:
+            r = int(130 + ((y - height * 0.33) / (height * 0.33)) * 90)
+            g = int(30 + ((y - height * 0.33) / (height * 0.33)) * 70)
+            b = int(40 + ((y - height * 0.33) / (height * 0.33)) * 20)
         else:
-            r = int(190 + ((y - height * 0.5) / (height * 0.5)) * 60)
-            g = int(70 + ((y - height * 0.5) / (height * 0.5)) * 140)
-            b = int(90 + ((y - height * 0.5) / (height * 0.5)) * 60)
+            r = int(220 + ((y - height * 0.66) / (height * 0.34)) * 35)
+            g = int(100 + ((y - height * 0.66) / (height * 0.34)) * 115)
+            b = int(60 + ((y - height * 0.66) / (height * 0.34)) * 30)
         lp_draw.line([(0, y), (left_w, y)], fill=(r, g, b, 255))
-    # Wavy right edge
-    for y in range(height):
-        x = int(30 * (1 + 0.2 * (y // 25) + 0.6 * (y / height)))
-        lp_draw.rectangle([left_w - x, y, left_w, y + 1], fill=(245, 247, 235, 0))
-    # Rounded rectangle mask
+    # Smooth, rounded right edge
     mask = Image.new("L", (left_w, height), 0)
     ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (left_w, height)], 60, fill=255)
     left_panel.putalpha(mask)
     card.paste(left_panel, (0, 0), left_panel)
 
-    # --- Avatar Placeholder (gold ring, dark inner circle) ---
+    # --- Profile Picture (real or placeholder) ---
     avatar_radius = 60
     avatar_center = (left_w // 2, height // 2 - 20)
-    avatar_bg = Image.new("RGBA", (avatar_radius * 2, avatar_radius * 2), (0, 0, 0, 0))
-    av_draw = ImageDraw.Draw(avatar_bg)
-    av_draw.ellipse((0, 0, avatar_radius * 2, avatar_radius * 2), fill=(255, 215, 0, 255))
-    av_draw.ellipse((8, 8, avatar_radius * 2 - 8, avatar_radius * 2 - 8), fill=(40, 40, 40, 255))
-    card.paste(avatar_bg, (avatar_center[0] - avatar_radius, avatar_center[1] - avatar_radius), avatar_bg)
+    profile_photo = await get_user_profile_photo(context, user_data["user_id"])
+    avatar_img = Image.new("RGBA", (avatar_radius * 2, avatar_radius * 2), (0, 0, 0, 0))
+    av_draw = ImageDraw.Draw(avatar_img)
+    av_draw.ellipse((0, 0, avatar_radius * 2, avatar_radius * 2), fill=(255, 215, 0, 255))  # Gold ring
 
-    # --- User name on left ---
+    if profile_photo:
+        profile_photo = profile_photo.resize((avatar_radius * 2 - 12, avatar_radius * 2 - 12))
+        mask = Image.new("L", (avatar_radius * 2 - 12, avatar_radius * 2 - 12), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, avatar_radius * 2 - 12, avatar_radius * 2 - 12), fill=255)
+        profile_photo = ImageOps.fit(profile_photo, (avatar_radius * 2 - 12, avatar_radius * 2 - 12))
+        avatar_img.paste(profile_photo, (6, 6), mask)
+    else:
+        av_draw.ellipse((6, 6, avatar_radius * 2 - 6, avatar_radius * 2 - 6), fill=(30, 30, 30, 255))
+    card.paste(avatar_img, (avatar_center[0] - avatar_radius, avatar_center[1] - avatar_radius), avatar_img)
+
+    # --- User name on left (fluorescent gold) ---
     try:
         name_font = ImageFont.truetype("arialbd.ttf", 22)
     except:
         name_font = ImageFont.load_default()
-    # Use getsize or textbbox for Pillow >= 10
     bbox = draw.textbbox((0, 0), user_data['name'], font=name_font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    draw.text((avatar_center[0] - w // 2, avatar_center[1] + avatar_radius + 10), user_data['name'], font=name_font, fill=(255, 215, 0))
+    draw.text((avatar_center[0] - w // 2, avatar_center[1] + avatar_radius + 10), user_data['name'], font=name_font, fill=(255, 255, 80))
 
-    # --- Right Panel: White with rounded corners ---
-    right_w = width - left_w
-    right_panel = Image.new("RGBA", (right_w, height), (255, 255, 255, 255))
+    # --- Right Panel: Black with gold border and neon accent ---
+    right_panel = Image.new("RGBA", (right_w, height), (30, 30, 30, 255))
     rp_draw = ImageDraw.Draw(right_panel)
     rp_mask = Image.new("L", (right_w, height), 0)
     ImageDraw.Draw(rp_mask).rounded_rectangle([(0, 0), (right_w, height)], 60, fill=255)
     right_panel.putalpha(rp_mask)
     card.paste(right_panel, (left_w, 0), right_panel)
+    # Gold border
+    draw.rounded_rectangle([(left_w, 0), (width, height)], 60, outline=(255, 215, 0), width=4)
 
-    # --- Stats and Achievements on right ---
+    # --- Stats and Achievements (neon gold/orange) ---
     try:
         header_font = ImageFont.truetype("arialbd.ttf", 20)
         normal_font = ImageFont.truetype("arial.ttf", 16)
@@ -274,32 +282,33 @@ async def create_modern_profile_card(user_data):
         header_font = normal_font = ImageFont.load_default()
     x0 = left_w + 40
     y0 = 60
-    draw.text((x0, y0), "🏏 HandCricket Profile", font=header_font, fill=(30, 30, 30))
+    draw.text((x0, y0), "🏏 HandCricket Profile", font=header_font, fill=(255, 255, 80))
     y0 += 35
-    draw.text((x0, y0), f"ID: {user_data['user_id']}", font=normal_font, fill=(80, 80, 80))
+    draw.text((x0, y0), f"ID: {user_data['user_id']}", font=normal_font, fill=(255, 215, 0))
     y0 += 25
-    draw.text((x0, y0), f"Coins: {user_data.get('coins', 0)} 🪙", font=normal_font, fill=(255, 215, 0))
+    draw.text((x0, y0), f"Coins: {user_data.get('coins', 0)} 🪙", font=normal_font, fill=(255, 255, 80))
     y0 += 25
-    draw.text((x0, y0), f"Wins: {user_data.get('wins', 0)}", font=normal_font, fill=(40, 40, 40))
+    draw.text((x0, y0), f"Wins: {user_data.get('wins', 0)}", font=normal_font, fill=(255, 140, 0))
     y0 += 20
-    draw.text((x0, y0), f"Losses: {user_data.get('losses', 0)}", font=normal_font, fill=(40, 40, 40))
+    draw.text((x0, y0), f"Losses: {user_data.get('losses', 0)}", font=normal_font, fill=(255, 80, 80))
     y0 += 20
-    draw.text((x0, y0), f"Ties: {user_data.get('ties', 0)}", font=normal_font, fill=(40, 40, 40))
+    draw.text((x0, y0), f"Ties: {user_data.get('ties', 0)}", font=normal_font, fill=(80, 255, 255))
     y0 += 35
-    draw.text((x0, y0), "Achievements:", font=header_font, fill=(255, 140, 0))
+    draw.text((x0, y0), "Achievements:", font=header_font, fill=(255, 255, 80))
     y0 += 25
     achievements = user_data.get("achievements", [])
     if achievements:
         for i, ach in enumerate(achievements[:4]):
-            draw.text((x0 + 15, y0 + i * 22), f"🏅 {ach}", font=normal_font, fill=(80, 80, 80))
+            draw.text((x0 + 15, y0 + i * 22), f"🏅 {ach}", font=normal_font, fill=(255, 215, 0))
     else:
-        draw.text((x0 + 15, y0), "No achievements yet", font=normal_font, fill=(120, 120, 120))
+        draw.text((x0 + 15, y0), "No achievements yet", font=normal_font, fill=(255, 255, 80))
 
     # Save to buffer
     buffer = io.BytesIO()
     card.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+    
     
     
     
