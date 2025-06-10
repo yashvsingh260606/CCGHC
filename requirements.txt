@@ -3,3 +3,4 @@ pymongo<4.9
 motor<3.6
 nest-asyncio
 pillow
+requests
