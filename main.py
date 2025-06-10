@@ -200,6 +200,41 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ {user.first_name} sent {amount}🪙 to {receiver['name']}."
     )
 
+from telegram import Update
+from telegram.ext import ContextTypes, CommandHandler
+
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    # Only allow admins
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    # Get the message to broadcast
+    if not context.args:
+        await update.message.reply_text("Usage: /broadcast Your message here")
+        return
+    message = " ".join(context.args)
+
+    # Load all users from MongoDB (in case USERS dict is not up to date)
+    try:
+        cursor = users_collection.find({})
+        count = 0
+        async for user in cursor:
+            uid = user.get("user_id")
+            if not uid:
+                continue
+            try:
+                await context.bot.send_message(chat_id=uid, text=message)
+                count += 1
+            except Exception as e:
+                print(f"Could not send to {uid}: {e}")
+        await update.message.reply_text(f"Broadcast sent to {count} users.")
+    except Exception as e:
+        await update.message.reply_text(f"Error broadcasting: {e}")
+        
+
 import io
 import requests
 from PIL import Image
@@ -1143,6 +1178,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("addachievement", addachievement))
     application.add_handler(CommandHandler("removeachievement", removeachievement))
     application.add_handler(CommandHandler("profilecard", profilecard))
+    application.add_handler(CommandHandler("broadcast", broadcast))
 
     # CCL commands and callbacks
     application.add_handler(CommandHandler("ccl", ccl_command))
