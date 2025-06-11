@@ -604,11 +604,13 @@ CCL_GIFS = {
     ],
     "50": [
         "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyYm5ueGVod2Z0MHcxNTF1dWVvY2EzOXo5bGxhcXdxMWFsOWl5Z3d6YyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LRsCOm65R3NHVwqiml/giphy.gif",
-        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyZnh4anZnbW1nYjllamt3eWowMndlY3BvdHlyZDdxMGsybDRrOXhjZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/kaSjUNmLgFEw6dyhOW/giphy.gif"
+        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyZnh4anZnbW1nYjllamt3eWowMndlY3BvdHlyZDdxMGsybDRrOXhjZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/kaSjUNmLgFEw6dyhOW/giphy.gif",
+        "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyODc3NXVocG84NWhtcnNyczkwMG9iOXUzODdhcHI0cWxheTR6OGF6YyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/RbzyGfUEYMwIVAH6Bj/giphy.gif"
     ],
     "100": [
         "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUya3EyMXE1dzY1dXE0Y3cwMDVzb2p6c3QxbTZ0MTR6aWdvY242ZnRzdyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/l1ugo9PYts0eHIRDG/giphy.gif",
-        "https://media2.giphy.com/media/v1.Y2lkPTZjMDliOTUydTF0OGE0YjlqNjk1OHUyZmZqdzAzNHFvazg1cmRlY2pzaWxieHg0OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ZAvn9tMUUJ3XjII6ry/giphy.gif"
+        "https://media2.giphy.com/media/v1.Y2lkPTZjMDliOTUydTF0OGE0YjlqNjk1OHUyZmZqdzAzNHFvazg1cmRlY2pzaWxieHg0OSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ZAvn9tMUUJ3XjII6ry/giphy.gif",
+        "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUyNXQzY3JzaXoya3BjaHE3b2dnOW5jMGdqeXlpbWtjc2JwMjJoMWxjayZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/PjSaG1p15sRtBQCTW7/giphy.gif"
     ],
 }
 
