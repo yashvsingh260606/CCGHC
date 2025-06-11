@@ -599,7 +599,7 @@ CCL_GIFS = {
     ],
     "out": [
         "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif",
-        "https://giphy.com/gifs/DYbTfb0Gqe148AAcMP",
+        "https://media2.giphy.com/media/v1.Y2lkPTZjMDliOTUyZHVoeDRtYWwxYmZ3dWNvZTl0cXRta2Q3YW9wcXJsNmZmaDF3MGYwaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/DYbTfb0Gqe148AAcMP/giphy.gif",
         "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUyaTRnd3ZleGFxMzJsMXJzN3NrajgyNDFmMW83cTlhOW9vYXJkMXZhaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LQosRo7lJKnOZLEItQ/giphy.gif"
     ],
     "50": [
