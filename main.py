@@ -599,6 +599,7 @@ CCL_GIFS = {
     ],
     "out": [
         "https://media3.giphy.com/media/Wq3WRGe9N5HkSqjITT/giphy.gif",
+        "https://giphy.com/gifs/DYbTfb0Gqe148AAcMP",
         "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUyaTRnd3ZleGFxMzJsMXJzN3NrajgyNDFmMW83cTlhOW9vYXJkMXZhaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LQosRo7lJKnOZLEItQ/giphy.gif"
     ],
     "50": [
