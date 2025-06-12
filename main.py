@@ -258,6 +258,56 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Broadcast sent to {count} users.")
     except Exception as e:
         await update.message.reply_text(f"Error broadcasting: {e}")
+
+from datetime import datetime, timedelta
+import random
+from telegram import Update
+from telegram.ext import ContextTypes
+
+MEME_LINES = [
+    "You claimed confidence. Use it before your next duck.",
+    "Today’s reward: tissues. For your post-match tears.",
+    "You got a motivational quote: ‘Even extras score more than you.’",
+    "Bot recommends retirement. This was your 3rd claim without coins.",
+    "You got benched. But here’s a bench. Sit and think.",
+    "You claimed a reward... but like Rohit in England, it just edged to slip.",
+    "You got benched harder than Sanju Samson during ICC selection.",
+    "Reward denied. Even Ashwin wouldn't appeal for this.",
+]
+
+CLAIM_COOLDOWN_HOURS = 1
+
+async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    user = await USERS.find_one({"_id": user_id})  # Make sure USERS is your MongoDB collection
+
+    now = datetime.utcnow()
+    last_claim = user.get("last_claim")
+
+    if last_claim and now - last_claim < timedelta(hours=CLAIM_COOLDOWN_HOURS):
+        remaining = timedelta(hours=CLAIM_COOLDOWN_HOURS) - (now - last_claim)
+        minutes = int(remaining.total_seconds() // 60)
+        seconds = int(remaining.total_seconds() % 60)
+        await update.message.reply_text(
+            f"⏳ You already claimed! Try again in {minutes}m {seconds}s."
+        )
+        return
+
+    # Update claim time
+    await USERS.update_one({"_id": user_id}, {"$set": {"last_claim": now}})
+
+    if random.random() < 0.5:
+        # Meme reward
+        message = random.choice(MEME_LINES)
+        await update.message.reply_text(f"😶 {message}")
+    else:
+        # Coin reward
+        coins = random.randint(100, 1000)
+        new_balance = user.get("coins", 0) + coins
+        await USERS.update_one({"_id": user_id}, {"$set": {"coins": new_balance}})
+        await update.message.reply_text(
+            f"🪙 You claimed {coins} coins!\nCome back in 1 hour!"
+        )
         
 
 import io
@@ -1286,6 +1336,7 @@ def register_handlers(application):
     application.add_handler(CommandHandler("profilecard", profilecard))
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("ping", ping))
+    application.add_handler(CommandHandler("claim", claim))
     # CCL commands and callbacks
     application.add_handler(CommandHandler("ccl", ccl_command))
     application.add_handler(CallbackQueryHandler(ccl_join_callback, pattern=r"^ccl_join_"))
