@@ -1131,6 +1131,70 @@ async def finish_match(context: ContextTypes.DEFAULT_TYPE, match, winner):
     GROUP_CCL_MATCH.pop(chat_id, None)
     CCL_MATCHES.pop(match["match_id"], None)
 
+from telegram import Update
+from telegram.ext import ContextTypes
+
+async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    # Check admin rights
+    if user_id not in BOT_ADMINS:
+        await update.message.reply_text("❌ This command is for bot admins only.")
+        return
+
+    # Check if user_id argument is provided
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("Usage: /remove <user_id>")
+        return
+
+    target_user_id = int(context.args[0])
+
+    # Check if the target user is currently in a match
+    match_id = USER_CCL_MATCH.get(target_user_id)
+    if not match_id:
+        await update.message.reply_text(f"User {target_user_id} is not currently in any match.")
+        return
+
+    match = CCL_MATCHES.get(match_id)
+    if not match:
+        # Clean inconsistent state
+        USER_CCL_MATCH[target_user_id] = None
+        await update.message.reply_text("Match data not found or already ended.")
+        return
+
+    group_id = match.get("group_id")
+
+    # Remove the user from the match
+    if match.get("initiator") == target_user_id:
+        match["initiator"] = None
+    if match.get("opponent") == target_user_id:
+        match["opponent"] = None
+
+    USER_CCL_MATCH[target_user_id] = None
+
+    # If no players left, remove the match and group mapping
+    if not match.get("initiator") and not match.get("opponent"):
+        CCL_MATCHES.pop(match_id, None)
+        GROUP_CCL_MATCH.pop(group_id, None)
+        await update.message.reply_text(f"User {target_user_id} removed. Match {match_id} ended as no players remain.")
+        return
+
+    # Otherwise update match data
+    CCL_MATCHES[match_id] = match
+
+    # Notify the group chat about the removal
+    try:
+        await context.bot.send_message(
+            chat_id=group_id,
+            text=f"⚠️ User {target_user_id} has been removed from the current match by an admin."
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Removed user but failed to notify group: {e}")
+        return
+
+    await update.message.reply_text(f"User {target_user_id} has been removed from match {match_id}.")
+    
+
 # --- /endmatch command for group admins ---
 
 import logging
@@ -1220,6 +1284,8 @@ def register_handlers(application):
     application.add_handler(CallbackQueryHandler(ccl_cancel_callback, pattern=r"^ccl_cancel_"))
     application.add_handler(CallbackQueryHandler(ccl_toss_callback, pattern=r"^ccl_toss_"))
     application.add_handler(CallbackQueryHandler(ccl_batbowl_callback, pattern=r"^ccl_batbowl_"))
+    application.add_handler(CommandHandler("remove", remove))
+    
 
     # Message handlers for batsman and bowler inputs (only in private chats)
     application.add_handler(
