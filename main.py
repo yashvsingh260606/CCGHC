@@ -259,10 +259,14 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Error broadcasting: {e}")
 
+
+
 from datetime import datetime, timedelta
 import random
 from telegram import Update
 from telegram.ext import ContextTypes
+
+CLAIM_COOLDOWN_HOURS = 1
 
 MEME_LINES = [
     "You claimed confidence. Use it before your next duck.",
@@ -275,14 +279,12 @@ MEME_LINES = [
     "Reward denied. Even Ashwin wouldn't appeal for this.",
 ]
 
-CLAIM_COOLDOWN_HOURS = 1
-
 async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = USERS.get(user_id)
 
     if not user:
-        await update.message.reply_text("Please /register first before claiming.")
+        await update.message.reply_text("Please /register before claiming rewards.")
         return
 
     now = datetime.utcnow()
@@ -299,18 +301,29 @@ async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Update claim time
     user["last_claim"] = now.isoformat()
-    if random.random() < 0.5:
-        # Meme reward
+
+    # Decide reward
+    chance = random.random()
+    if chance < 0.01:
+        # 🎰 Jackpot
+        jackpot = 5000
+        user["coins"] = user.get("coins", 0) + jackpot
+        await update.message.reply_text(
+            f"🎉 JACKPOT! You claimed {jackpot} coins!\nGo buy yourself a better batting average 🏏"
+        )
+    elif chance < 0.30:
+        # 😶 Meme roast
         message = random.choice(MEME_LINES)
         await update.message.reply_text(f"😶 {message}")
     else:
-        # Coin reward
+        # 🪙 Normal coin reward
         coins = random.randint(100, 1000)
         user["coins"] = user.get("coins", 0) + coins
         await update.message.reply_text(
             f"🪙 You claimed {coins} coins!\nCome back in 1 hour!"
         )
 
+    # Save back to DB
     await save_user(user_id)
         
 
