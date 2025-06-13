@@ -278,14 +278,18 @@ MEME_LINES = [
 CLAIM_COOLDOWN_HOURS = 1
 
 async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    user = await USERS.find_one({"_id": user_id})  # Make sure USERS is your MongoDB collection
+    user_id = update.effective_user.id
+    user = USERS.get(user_id)
+
+    if not user:
+        await update.message.reply_text("Please /register first before claiming.")
+        return
 
     now = datetime.utcnow()
     last_claim = user.get("last_claim")
 
-    if last_claim and now - last_claim < timedelta(hours=CLAIM_COOLDOWN_HOURS):
-        remaining = timedelta(hours=CLAIM_COOLDOWN_HOURS) - (now - last_claim)
+    if last_claim and now - datetime.fromisoformat(last_claim) < timedelta(hours=CLAIM_COOLDOWN_HOURS):
+        remaining = timedelta(hours=CLAIM_COOLDOWN_HOURS) - (now - datetime.fromisoformat(last_claim))
         minutes = int(remaining.total_seconds() // 60)
         seconds = int(remaining.total_seconds() % 60)
         await update.message.reply_text(
@@ -294,8 +298,7 @@ async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Update claim time
-    await USERS.update_one({"_id": user_id}, {"$set": {"last_claim": now}})
-
+    user["last_claim"] = now.isoformat()
     if random.random() < 0.5:
         # Meme reward
         message = random.choice(MEME_LINES)
@@ -303,11 +306,12 @@ async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # Coin reward
         coins = random.randint(100, 1000)
-        new_balance = user.get("coins", 0) + coins
-        await USERS.update_one({"_id": user_id}, {"$set": {"coins": new_balance}})
+        user["coins"] = user.get("coins", 0) + coins
         await update.message.reply_text(
             f"🪙 You claimed {coins} coins!\nCome back in 1 hour!"
         )
+
+    await save_user(user_id)
         
 
 import io
