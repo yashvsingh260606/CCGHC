@@ -327,135 +327,112 @@ async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await save_user(user_id)
         
 
-import io
-import requests
-from PIL import Image
-
-async def get_user_profile_photo(context, user_id):
-    photos = await context.bot.get_user_profile_photos(user_id, limit=1)
-    if photos.total_count > 0:
-        file_id = photos.photos[0][0].file_id
-        file = await context.bot.get_file(file_id)
-        file_bytes = requests.get(file.file_path).content
-        return Image.open(io.BytesIO(file_bytes)).convert("RGBA")
-    else:
-        return None  # No photo, will use placeholder
-
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+import requests
+from io import BytesIO
 
-async def create_modern_profile_card(user_data, profile_photo):
-    width, height = 700, 350
-    left_w = 270
-    right_w = width - left_w
+async def generate_profile_card(user_data):
+    # Sizes and colors
+    width, height = 800, 400
+    pfp_size = 180
+    bg_color_left = (190, 40, 70)
+    bg_color_right = (245, 245, 245)
+    border_radius = 40
 
-    # --- Base image ---
-    card = Image.new("RGB", (width, height), (245, 247, 235))
-    draw = ImageDraw.Draw(card)
+    # Fonts (replace with real font paths on server if needed)
+    font_bold = ImageFont.truetype("arialbd.ttf", 30)
+    font_medium = ImageFont.truetype("arial.ttf", 24)
+    font_small = ImageFont.truetype("arial.ttf", 20)
 
-    # --- Smooth, rounded, fiery left panel ---
-    left_panel = Image.new("RGBA", (left_w, height), (0, 0, 0, 0))
-    grad = Image.new("RGBA", (left_w, height))
-    for y in range(height):
-        # Multi-stop fiery gradient: dark red -> orange -> gold
-        if y < height * 0.5:
-            r = int(100 + (y / (height * 0.5)) * 80)
-            g = int(20 + (y / (height * 0.5)) * 60)
-            b = int(40 + (y / (height * 0.5)) * 30)
-        else:
-            r = int(180 + ((y - height * 0.5) / (height * 0.5)) * 55)
-            g = int(80 + ((y - height * 0.5) / (height * 0.5)) * 140)
-            b = int(70 + ((y - height * 0.5) / (height * 0.5)) * 60)
-        for x in range(left_w):
-            grad.putpixel((x, y), (r, g, b, 255))
-    # Rounded rectangle mask for smooth corners
-    mask = Image.new("L", (left_w, height), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (left_w, height)], 60, fill=255)
-    grad.putalpha(mask)
-    left_panel = grad
-    card.paste(left_panel, (0, 0), left_panel)
+    # Create base canvas
+    img = Image.new("RGB", (width, height), color=bg_color_right)
+    draw = ImageDraw.Draw(img)
 
-    # --- Profile Picture (real or placeholder) ---
-    avatar_radius = 60
-    avatar_center = (left_w // 2, height // 2 - 20)
-    avatar_img = Image.new("RGBA", (avatar_radius * 2, avatar_radius * 2), (0, 0, 0, 0))
-    av_draw = ImageDraw.Draw(avatar_img)
-    av_draw.ellipse((0, 0, avatar_radius * 2, avatar_radius * 2), fill=(255, 215, 0, 255))  # Gold ring
+    # Left rounded panel
+    draw.rounded_rectangle([(0, 0), (width // 2, height)], radius=border_radius, fill=bg_color_left)
 
-    if profile_photo:
-        profile_photo = profile_photo.resize((avatar_radius * 2 - 12, avatar_radius * 2 - 12))
-        mask = Image.new("L", (avatar_radius * 2 - 12, avatar_radius * 2 - 12), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, avatar_radius * 2 - 12, avatar_radius * 2 - 12), fill=255)
-        profile_photo = ImageOps.fit(profile_photo, (avatar_radius * 2 - 12, avatar_radius * 2 - 12))
-        avatar_img.paste(profile_photo, (6, 6), mask)
-    else:
-        av_draw.ellipse((6, 6, avatar_radius * 2 - 6, avatar_radius * 2 - 6), fill=(30, 30, 30, 255))
-    card.paste(avatar_img, (avatar_center[0] - avatar_radius, avatar_center[1] - avatar_radius), avatar_img)
-
-    # --- User name on left (fluorescent gold) ---
+    # Load PFP
     try:
-        name_font = ImageFont.truetype("arialbd.ttf", 22)
+        response = requests.get(user_data.get("pfp_url", ""), timeout=5)
+        pfp = Image.open(BytesIO(response.content)).convert("RGB").resize((pfp_size, pfp_size))
     except:
-        name_font = ImageFont.load_default()
-    name = user_data['name']
-    bbox = draw.textbbox((0, 0), name, font=name_font)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    draw.text((avatar_center[0] - w // 2, avatar_center[1] + avatar_radius + 15), name, font=name_font, fill=(255, 255, 80))
+        pfp = Image.new("RGB", (pfp_size, pfp_size), (30, 30, 30))
 
-    # --- Right Panel: White with rounded corners ---
-    right_panel = Image.new("RGBA", (right_w, height), (255, 255, 255, 255))
-    rp_mask = Image.new("L", (right_w, height), 0)
-    ImageDraw.Draw(rp_mask).rounded_rectangle([(0, 0), (right_w, height)], 60, fill=255)
-    right_panel.putalpha(rp_mask)
-    card.paste(right_panel, (left_w, 0), right_panel)
+    # Make circular mask
+    mask = Image.new("L", (pfp_size, pfp_size), 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.ellipse((0, 0, pfp_size, pfp_size), fill=255)
+    pfp = ImageOps.fit(pfp, (pfp_size, pfp_size), centering=(0.5, 0.5))
+    pfp.putalpha(mask)
+    img.paste(pfp, (width // 4 - pfp_size // 2, height // 2 - pfp_size // 2), mask=pfp)
 
-    # --- Stats and Achievements on right ---
-    try:
-        header_font = ImageFont.truetype("arialbd.ttf", 20)
-        normal_font = ImageFont.truetype("arial.ttf", 16)
-    except:
-        header_font = normal_font = ImageFont.load_default()
-    x0 = left_w + 40
-    y0 = 60
-    draw.text((x0, y0), "🏏 HandCricket Profile", font=header_font, fill=(30, 30, 30))
-    y0 += 35
-    draw.text((x0, y0), f"ID: {user_data['user_id']}", font=normal_font, fill=(80, 80, 80))
-    y0 += 25
-    draw.text((x0, y0), f"Coins: {user_data.get('coins', 0)} 🪙", font=normal_font, fill=(255, 215, 0))
-    y0 += 25
-    draw.text((x0, y0), f"Wins: {user_data.get('wins', 0)}", font=normal_font, fill=(255, 140, 0))
-    y0 += 20
-    draw.text((x0, y0), f"Losses: {user_data.get('losses', 0)}", font=normal_font, fill=(255, 80, 80))
-    y0 += 20
-    draw.text((x0, y0), f"Ties: {user_data.get('ties', 0)}", font=normal_font, fill=(80, 255, 255))
-    y0 += 35
-    draw.text((x0, y0), "Achievements:", font=header_font, fill=(255, 215, 0))
-    y0 += 25
-    achievements = user_data.get("achievements", [])
-    if achievements:
-        for i, ach in enumerate(achievements[:4]):
-            draw.text((x0 + 15, y0 + i * 22), f"🏅 {ach}", font=normal_font, fill=(255, 215, 0))
-    else:
-        draw.text((x0 + 15, y0), "No achievements yet", font=normal_font, fill=(120, 120, 120))
+    # Right panel text
+    x_text = width // 2 + 30
+    y = 40
+    draw.text((x_text, y), f"{user_data.get('name', 'Unknown')}", font=font_bold, fill=(0, 0, 0))
+    y += 40
+    draw.text((x_text, y), f"@{user_data.get('username', '')}", font=font_small, fill=(80, 80, 80))
 
-    # Save to buffer
-    buffer = io.BytesIO()
-    card.save(buffer, format="PNG")
-    buffer.seek(0)
-    return buffer
+    y += 50
+    draw.text((x_text, y), f"🪙 Coins: {user_data.get('coins', 0)}", font=font_medium, fill=(50, 0, 0))
+    y += 35
+    draw.text((x_text, y), f"🏆 Wins: {user_data.get('wins', 0)}", font=font_medium, fill=(0, 100, 0))
+    y += 35
+    draw.text((x_text, y), f"❌ Losses: {user_data.get('losses', 0)}", font=font_medium, fill=(120, 0, 0))
+    y += 35
+    draw.text((x_text, y), f"🤝 Ties: {user_data.get('ties', 0)}", font=font_medium, fill=(0, 0, 120))
 
+    y += 45
+    draw.text((x_text, y), "🎖 Achievements:", font=font_medium, fill=(0, 0, 0))
+    y += 30
 
+    for ach in user_data.get("achievements", [])[:3]:
+        draw.text((x_text + 20, y), f"• {ach}", font=font_small, fill=(50, 50, 50))
+        y += 28
 
+    return img
 
-async def profilecard(update, context):
+from telegram import InputFile
+from io import BytesIO
+
+async def profilecard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    ensure_user(user)
-    user_data = USERS[user.id]
-    profile_photo = await get_user_profile_photo(context, user.id)
-    buffer = await create_modern_profile_card(user_data, profile_photo)
-    await update.message.reply_photo(
-        photo=InputFile(buffer, filename="profile_card.png"),
-        caption=f"🔥 {user_data['name']}'s HandCricket Card"
-    )
+    user_id = user.id
+    user_data = await USERS.find_one({"_id": user_id})
+
+    if not user_data:
+        await update.message.reply_text("You're not registered. Use /start to begin.")
+        return
+
+    # Try to get profile picture
+    try:
+        photos = await context.bot.get_user_profile_photos(user.id, limit=1)
+        file_id = photos.photos[0][0].file_id if photos.total_count > 0 else None
+        if file_id:
+            file = await context.bot.get_file(file_id)
+            user_data["pfp_url"] = file.file_path
+        else:
+            user_data["pfp_url"] = ""
+    except:
+        user_data["pfp_url"] = ""
+
+    # Add fallback/default fields
+    user_data["name"] = user.first_name
+    user_data["username"] = user.username or "unknown"
+    user_data["coins"] = user_data.get("coins", 0)
+    user_data["wins"] = user_data.get("wins", 0)
+    user_data["losses"] = user_data.get("losses", 0)
+    user_data["ties"] = user_data.get("ties", 0)
+    user_data["achievements"] = user_data.get("achievements", [])
+
+    # Generate the card
+    image = await generate_profile_card(user_data)
+
+    # Send back as photo
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+    buffer.seek(0)
+    await update.message.reply_photo(photo=InputFile(buffer), caption="🧾 Your Cricket Profile Card")
     
 
 
