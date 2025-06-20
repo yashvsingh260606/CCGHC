@@ -259,6 +259,51 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Error broadcasting: {e}")
 
+async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    # Check if the user is a bot admin
+    if user_id not in BOT_ADMINS:
+        await update.message.reply_text("❌ This command is for bot admins only.")
+        return
+
+    # Validate arguments
+    if len(context.args) != 2:
+        await update.message.reply_text("Usage: /add <user_id> <amount>")
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+        amount = int(context.args[1])
+        if amount <= 0:
+            await update.message.reply_text("Amount must be positive.")
+            return
+    except ValueError:
+        await update.message.reply_text("User ID and amount must be numbers.")
+        return
+
+    # Load user if not in cache
+    if target_user_id not in USERS:
+        user_data = await users_collection.find_one({"user_id": target_user_id})
+        if not user_data:
+            await update.message.reply_text(f"User with ID {target_user_id} not found.")
+            return
+        USERS[target_user_id] = user_data
+
+    USERS[target_user_id]["coins"] = USERS[target_user_id].get("coins", 0) + amount
+
+    # Save to DB
+    await users_collection.update_one(
+        {"user_id": target_user_id},
+        {"$set": {"coins": USERS[target_user_id]["coins"]}},
+        upsert=True,
+    )
+
+    await update.message.reply_text(
+        f"✅ Added {amount}🪙 to user {target_user_id}.\n"
+        f"New balance: {USERS[target_user_id]['coins']}🪙"
+    )
+
 
 
 from datetime import datetime, timedelta
@@ -1338,7 +1383,7 @@ def register_handlers(application):
     application.add_handler(CallbackQueryHandler(ccl_toss_callback, pattern=r"^ccl_toss_"))
     application.add_handler(CallbackQueryHandler(ccl_batbowl_callback, pattern=r"^ccl_batbowl_"))
     application.add_handler(CommandHandler("remove", remove))
-    
+    application.add_handler(CommandHandler("add", add))
 
     # Message handlers for batsman and bowler inputs (only in private chats)
     application.add_handler(
