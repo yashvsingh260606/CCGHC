@@ -648,34 +648,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text)
 
-async def track_and_save_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    if chat.type in ["group", "supergroup"]:
-        group_id = chat.id
-        title = chat.title or "Unknown"
-        try:
-            await groups_collection.update_one(
-                {"group_id": group_id},
-                {"$set": {"title": title}},
-                upsert=True
-            )
-        except Exception as e:
-            logger.error(f"Failed to save group {group_id}: {e}")
 
-async def grouplist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in BOT_ADMINS:
-        await update.message.reply_text("❌ This command is for bot admins only.")
-        return
-
-    cursor = groups_collection.find({})
-    text = "📋 *Groups the Bot is in:*\n\n"
-    async for group in cursor:
-        gid = group["group_id"]
-        title = group.get("title", "Unknown")
-        invite = f"https://t.me/c/{str(gid)[4:]}" if str(gid).startswith("-100") else "N/A"
-        text += f"🔹 {title}\n`{gid}`\nLink: {invite}\n\n"
-
-    await update.message.reply_text(text or "No groups found.", parse_mode="Markdown")
 
 
 import asyncio
@@ -1416,8 +1389,7 @@ def register_handlers(application):
     application.add_handler(CallbackQueryHandler(ccl_batbowl_callback, pattern=r"^ccl_batbowl_"))
     application.add_handler(CommandHandler("remove", remove))
     application.add_handler(CommandHandler("add", add))
-    application.add_handler(MessageHandler(filters.ALL, track_and_save_group))
-    application.add_handler(CommandHandler("grouplist", grouplist))
+    
     
 
     # Message handlers for batsman and bowler inputs (only in private chats)
