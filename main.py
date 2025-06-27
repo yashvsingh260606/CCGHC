@@ -18,7 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 # List of Telegram user IDs who are bot admins
  # Replace with your own Telegram user IDs
 BOT_TOKEN = "8198938492:AAFE0CxaXVeB8cpyphp7pSV98oiOKlf5Jwo"  # Replace with your bot token
-MONGO_URL = "mongodb://mongo:GhpHMiZizYnvJfKIQKxoDbRyzBCpqEyC@mainline.proxy.rlwy.net:54853"  # Replace with your MongoDB URI
+MONGO_URL = "mongodb://mongo:EbCiNkUnWoDDbewzcNLDjdytwEsmhKxK@interchange.proxy.rlwy.net:57785"  # Replace with your MongoDB URI
 # --- Configuration ---
 
 # List of Telegram user IDs who are bot admins
