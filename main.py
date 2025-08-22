@@ -100,7 +100,7 @@ ADGRAM_BLOCK_ID = "14128"         # from AdGram dashboard
 ADGRAM_API_TOKEN = "854b9eaa6bd14f479e89d99d92149c35"       # from AdGram dashboard
 
 async def show_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fetch and send AdGram banner ad (safe with inline buttons)"""
+    """Fetch and send AdGram ads (supports both text + banner)."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else user_id
 
@@ -114,43 +114,67 @@ async def show_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params) as resp:
-                response = await resp.json()
+                if resp.status != 200:
+                    text = await resp.text()
+                    await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {resp.status}) {text[:100]}")
+                    return
+                if resp.headers.get("Content-Type") != "application/json":
+                    text = await resp.text()
+                    await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: Non-JSON response) {text[:80]}")
+                    return
+                data = await resp.json()
 
-        if "message" not in response:
-            return  # no ad available
+        # --- Case 1: Text ad ---
+        if "message" in data:
+            ad_text = data["message"].get("text", "")
+            rm = data["message"].get("reply_markup")
+            reply_markup = None
 
-        ad_text = response["message"].get("text", "")
-        rm = response["message"].get("reply_markup")
-        reply_markup = None
+            if rm and isinstance(rm, dict) and "inline_keyboard" in rm:
+                keyboard = []
+                for row in rm["inline_keyboard"]:
+                    btn_row = []
+                    for btn in row:
+                        text = btn.get("text", "Open")
+                        if "url" in btn:
+                            btn_row.append(InlineKeyboardButton(text=text, url=btn["url"]))
+                        elif "callback_data" in btn:
+                            btn_row.append(InlineKeyboardButton(text=text, callback_data=btn["callback_data"]))
+                    if btn_row:
+                        keyboard.append(btn_row)
+                if keyboard:
+                    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # 🔹 Convert dict -> InlineKeyboardMarkup
-        if rm and isinstance(rm, dict) and "inline_keyboard" in rm:
-            keyboard = []
-            for row in rm["inline_keyboard"]:
-                btn_row = []
-                for btn in row:
-                    text = btn.get("text", "Open")
-                    if "url" in btn:
-                        btn_row.append(InlineKeyboardButton(text=text, url=btn["url"]))
-                    elif "callback_data" in btn:
-                        btn_row.append(InlineKeyboardButton(text=text, callback_data=btn["callback_data"]))
-                if btn_row:
-                    keyboard.append(btn_row)
-            if keyboard:
-                reply_markup = InlineKeyboardMarkup(keyboard)
+            if ad_text:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=ad_text,
+                    reply_markup=reply_markup
+                )
+                return
 
-        if ad_text:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=ad_text,
-                reply_markup=reply_markup
-            )
+        # --- Case 2: Banner ad ---
+        if "banner" in data:
+            banner_url = data["banner"].get("url")
+            banner_link = data["banner"].get("link")
+            if banner_url:
+                keyboard = None
+                if banner_link:
+                    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Open Ad", url=banner_link)]])
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=banner_url,
+                    caption="📢 Sponsored",
+                    reply_markup=keyboard
+                )
+                return
+
+        # --- No ad available ---
+        await context.bot.send_message(chat_id=chat_id, text="(No ad available right now)")
 
     except Exception as e:
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {e})")
-        except:
-            pass
+        await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {e})")
+
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
