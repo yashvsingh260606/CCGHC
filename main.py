@@ -1,6 +1,7 @@
 import logging
 import random
 import certifi
+import aiohttp
 from datetime import datetime, timedelta
 from keep_alive import keep_alive
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -91,6 +92,66 @@ async def load_users():
         logger.error(f"Error loading users: {e}", exc_info=True)
 
 # --- Commands ---
+
+
+# ================== AdGram Config ==================
+ADGRAM_PLATFORM_ID = "12185"   # from AdGram dashboard
+ADGRAM_BLOCK_ID = "14128"         # from AdGram dashboard
+ADGRAM_API_TOKEN = "854b9eaa6bd14f479e89d99d92149c35"       # from AdGram dashboard
+
+async def show_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Fetch and send AdGram banner ad (safe with inline buttons)"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else user_id
+
+    url = f"https://partner.adsgram.ai/api/bot/{ADGRAM_PLATFORM_ID}/ad"
+    params = {
+        "user_id": user_id,
+        "block_id": ADGRAM_BLOCK_ID,
+        "token": ADGRAM_API_TOKEN
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as resp:
+                response = await resp.json()
+
+        if "message" not in response:
+            return  # no ad available
+
+        ad_text = response["message"].get("text", "")
+        rm = response["message"].get("reply_markup")
+        reply_markup = None
+
+        # 🔹 Convert dict -> InlineKeyboardMarkup
+        if rm and isinstance(rm, dict) and "inline_keyboard" in rm:
+            keyboard = []
+            for row in rm["inline_keyboard"]:
+                btn_row = []
+                for btn in row:
+                    text = btn.get("text", "Open")
+                    if "url" in btn:
+                        btn_row.append(InlineKeyboardButton(text=text, url=btn["url"]))
+                    elif "callback_data" in btn:
+                        btn_row.append(InlineKeyboardButton(text=text, callback_data=btn["callback_data"]))
+                if btn_row:
+                    keyboard.append(btn_row)
+            if keyboard:
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if ad_text:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=ad_text,
+                reply_markup=reply_markup
+            )
+
+    except Exception as e:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {e})")
+        except:
+            pass
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -519,6 +580,7 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data["last_daily"] = now.isoformat()
     await save_user(user.id)
     await update.message.reply_text(f"🎉 You received your daily reward of {reward}🪙!")
+    await show_ad(update, context)
 
 # --- Leaderboard ---
 
@@ -1230,17 +1292,41 @@ async def finish_match(context: ContextTypes.DEFAULT_TYPE, match, winner):
     if bet_amount > 0:
         USERS[winner]["coins"] += bet_amount
         USERS[loser]["coins"] -= bet_amount
-        await context.bot.send_message(chat_id=chat_id, text=f"💰 {bet_amount}🪙 coins transferred to {USERS[winner]['name']} as bet winnings!")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"💰 {bet_amount}🪙 coins transferred to {USERS[winner]['name']} as bet winnings!"
+        )
 
     await save_user(winner)
     await save_user(loser)
 
-    await context.bot.send_message(chat_id=chat_id, text=f"🏆 {USERS[winner]['name']} won the match! Congratulations! 🎉")
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"🏆 {USERS[winner]['name']} won the match! Congratulations! 🎉"
+    )
 
     USER_CCL_MATCH[initiator] = None
     USER_CCL_MATCH[opponent] = None
     GROUP_CCL_MATCH.pop(chat_id, None)
     CCL_MATCHES.pop(match["match_id"], None)
+
+    # 🔹 Show AdGram banner ad
+    try:
+        # Wrap a fake update-like object so show_ad works
+        class FakeUpdate:
+            def __init__(self, chat_id, user_id):
+                self.effective_user = type("User", (), {"id": user_id})()
+                self.message = type("Message", (), {
+                    "reply_text": lambda _, text, reply_markup=None: context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+                })()
+                self.effective_chat = type("Chat", (), {"id": chat_id})()
+
+        fake_update = FakeUpdate(chat_id, winner)
+        await show_ad(fake_update, context)
+
+    except Exception as e:
+        await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {e})")
+
 
 from telegram import Update
 from telegram.ext import ContextTypes
