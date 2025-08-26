@@ -1,7 +1,5 @@
 import logging
 import random
-import certifi
-import aiohttp
 from datetime import datetime, timedelta
 from keep_alive import keep_alive
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -97,12 +95,30 @@ async def load_users():
 # ================== AdGram Config ==================
 ADGRAM_PLATFORM_ID = "12185"   # from AdGram dashboard
 ADGRAM_BLOCK_ID = "14128"         # from AdGram dashboard
-ADGRAM_API_TOKEN = "854b9eaa6bd14f479e89d99d92149c35"       # from AdGram dashboard
+ADGRAM_API_TOKEN = "9605eb53dec74d51921552ef4823c66b"       # from AdGram dashboard
 
-async def show_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fetch and send AdGram ads (supports both text + banner)."""
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else user_id
+
+import ssl
+import certifi
+import aiohttp
+
+async def show_ad(update_or_user_id, context_or_bot=None, chat_id=None):
+    """
+    Overloaded:
+      - show_ad(update, context)
+      - show_ad(user_id:int, bot, chat_id:int)
+    """
+    # Normalize args
+    if isinstance(update_or_user_id, int):
+        user_id = int(update_or_user_id)
+        bot = context_or_bot
+        target_chat = chat_id
+    else:
+        update = update_or_user_id
+        context = context_or_bot
+        user_id = update.effective_user.id
+        bot = context.bot
+        target_chat = update.effective_chat.id
 
     url = f"https://partner.adsgram.ai/api/bot/{ADGRAM_PLATFORM_ID}/ad"
     params = {
@@ -112,69 +128,20 @@ async def show_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
             async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {resp.status}) {text[:100]}")
-                    return
-                if resp.headers.get("Content-Type") != "application/json":
-                    text = await resp.text()
-                    await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: Non-JSON response) {text[:80]}")
-                    return
-                data = await resp.json()
+                # Accept JSON even if charset is present
+                data = await resp.json(content_type=None)
 
-        # --- Case 1: Text ad ---
         if "message" in data:
-            ad_text = data["message"].get("text", "")
-            rm = data["message"].get("reply_markup")
-            reply_markup = None
-
-            if rm and isinstance(rm, dict) and "inline_keyboard" in rm:
-                keyboard = []
-                for row in rm["inline_keyboard"]:
-                    btn_row = []
-                    for btn in row:
-                        text = btn.get("text", "Open")
-                        if "url" in btn:
-                            btn_row.append(InlineKeyboardButton(text=text, url=btn["url"]))
-                        elif "callback_data" in btn:
-                            btn_row.append(InlineKeyboardButton(text=text, callback_data=btn["callback_data"]))
-                    if btn_row:
-                        keyboard.append(btn_row)
-                if keyboard:
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-
-            if ad_text:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=ad_text,
-                    reply_markup=reply_markup
-                )
-                return
-
-        # --- Case 2: Banner ad ---
-        if "banner" in data:
-            banner_url = data["banner"].get("url")
-            banner_link = data["banner"].get("link")
-            if banner_url:
-                keyboard = None
-                if banner_link:
-                    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Open Ad", url=banner_link)]])
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=banner_url,
-                    caption="📢 Sponsored",
-                    reply_markup=keyboard
-                )
-                return
-
-        # --- No ad available ---
-        await context.bot.send_message(chat_id=chat_id, text="(No ad available right now)")
-
+            ad_text = data["message"]["text"]
+            ad_buttons = data["message"].get("reply_markup")
+            await bot.send_message(chat_id=target_chat, text=ad_text, reply_markup=ad_buttons)
+        else:
+            await bot.send_message(chat_id=target_chat, text="📢 No ads available right now.")
     except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {e})")
-
+        await bot.send_message(chat_id=target_chat, text=f"(Ad error: {e})")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1334,20 +1301,9 @@ async def finish_match(context: ContextTypes.DEFAULT_TYPE, match, winner):
     GROUP_CCL_MATCH.pop(chat_id, None)
     CCL_MATCHES.pop(match["match_id"], None)
 
-    # 🔹 Show AdGram banner ad
+    # 🔹 Show AdGram banner ad (winner’s user_id is tracked, ad shown in group)
     try:
-        # Wrap a fake update-like object so show_ad works
-        class FakeUpdate:
-            def __init__(self, chat_id, user_id):
-                self.effective_user = type("User", (), {"id": user_id})()
-                self.message = type("Message", (), {
-                    "reply_text": lambda _, text, reply_markup=None: context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
-                })()
-                self.effective_chat = type("Chat", (), {"id": chat_id})()
-
-        fake_update = FakeUpdate(chat_id, winner)
-        await show_ad(fake_update, context)
-
+        await show_ad(winner, context.bot, chat_id)
     except Exception as e:
         await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {e})")
 
