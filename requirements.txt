@@ -8,3 +8,4 @@ telegram
 certifi
 flask
 aiohttp
+ssl
