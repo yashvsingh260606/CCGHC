@@ -1,6 +1,6 @@
 import logging
-import certifi
 import random
+import certifi
 from datetime import datetime, timedelta
 from keep_alive import keep_alive
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -91,59 +91,6 @@ async def load_users():
         logger.error(f"Error loading users: {e}", exc_info=True)
 
 # --- Commands ---
-
-
-# ================== AdGram Config ==================
-ADGRAM_PLATFORM_ID = "12185"   # from AdGram dashboard
-ADGRAM_BLOCK_ID = "14128"         # from AdGram dashboard
-ADGRAM_API_TOKEN = "9605eb53dec74d51921552ef4823c66b"       # from AdGram dashboard
-
-
-import ssl
-import certifi
-import aiohttp
-
-async def show_ad(update_or_user_id, context_or_bot=None, chat_id=None):
-    """
-    Overloaded:
-      - show_ad(update, context)
-      - show_ad(user_id:int, bot, chat_id:int)
-    """
-    # Normalize args
-    if isinstance(update_or_user_id, int):
-        user_id = int(update_or_user_id)
-        bot = context_or_bot
-        target_chat = chat_id
-    else:
-        update = update_or_user_id
-        context = context_or_bot
-        user_id = update.effective_user.id
-        bot = context.bot
-        target_chat = update.effective_chat.id
-
-    url = f"https://partner.adsgram.ai/api/bot/{ADGRAM_PLATFORM_ID}/ad"
-    params = {
-        "user_id": user_id,
-        "block_id": ADGRAM_BLOCK_ID,
-        "token": ADGRAM_API_TOKEN
-    }
-
-    try:
-        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
-            async with session.get(url, params=params) as resp:
-                # Accept JSON even if charset is present
-                data = await resp.json(content_type=None)
-
-        if "message" in data:
-            ad_text = data["message"]["text"]
-            ad_buttons = data["message"].get("reply_markup")
-            await bot.send_message(chat_id=target_chat, text=ad_text, reply_markup=ad_buttons)
-        else:
-            await bot.send_message(chat_id=target_chat, text="📢 No ads available right now.")
-    except Exception as e:
-        await bot.send_message(chat_id=target_chat, text=f"(Ad error: {e})")
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -572,7 +519,6 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data["last_daily"] = now.isoformat()
     await save_user(user.id)
     await update.message.reply_text(f"🎉 You received your daily reward of {reward}🪙!")
-    await show_ad(update, context)
 
 # --- Leaderboard ---
 
@@ -1284,30 +1230,17 @@ async def finish_match(context: ContextTypes.DEFAULT_TYPE, match, winner):
     if bet_amount > 0:
         USERS[winner]["coins"] += bet_amount
         USERS[loser]["coins"] -= bet_amount
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"💰 {bet_amount}🪙 coins transferred to {USERS[winner]['name']} as bet winnings!"
-        )
+        await context.bot.send_message(chat_id=chat_id, text=f"💰 {bet_amount}🪙 coins transferred to {USERS[winner]['name']} as bet winnings!")
 
     await save_user(winner)
     await save_user(loser)
 
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"🏆 {USERS[winner]['name']} won the match! Congratulations! 🎉"
-    )
+    await context.bot.send_message(chat_id=chat_id, text=f"🏆 {USERS[winner]['name']} won the match! Congratulations! 🎉")
 
     USER_CCL_MATCH[initiator] = None
     USER_CCL_MATCH[opponent] = None
     GROUP_CCL_MATCH.pop(chat_id, None)
     CCL_MATCHES.pop(match["match_id"], None)
-
-    # 🔹 Show AdGram banner ad (winner’s user_id is tracked, ad shown in group)
-    try:
-        await show_ad(winner, context.bot, chat_id)
-    except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text=f"(Ad error: {e})")
-
 
 from telegram import Update
 from telegram.ext import ContextTypes
